@@ -58,7 +58,7 @@ module nubus_video (
     end
 
     // ROM Buffer (32KB) - Keep on-chip
-    (* ramstyle = "M10K" *) reg [7:0] rom [0:32767];
+    reg [7:0] rom [0:32767];
 
     // Registers
     reg [7:0] reg_control;
@@ -137,33 +137,39 @@ module nubus_video (
         end
     end
 
-    // Video fetch - simplified to always read
+    // Video fetch address calculation
+    wire [16:0] v_times_40  = {1'b0, v_cnt[9:0], 5'd0} + {3'd0, v_cnt[9:0], 3'd0};
+    wire [17:0] v_times_80  = {v_cnt[8:0], 6'd0} + {2'd0, v_cnt[8:0], 4'd0};
+    wire [17:0] v_times_160 = {v_cnt[7:0], 7'd0} + {1'd0, v_cnt[7:0], 5'd0};
+    wire [17:0] v_times_320 = {v_cnt[6:0], 8'd0} + {v_cnt[6:0], 6'd0};
+    
     reg [17:0] fetch_addr;
-    reg [15:0] vram_cache;
-    reg vram_cache_valid;
     
     always @(*) begin
         case (mode)
-            2'b00: fetch_addr = {v_cnt[9:0], 5'd0} + {3'd0, v_cnt[9:0], 3'd0} + {7'd0, h_cnt[10:4]};
-            2'b01: fetch_addr = {v_cnt[8:0], 6'd0} + {2'd0, v_cnt[8:0], 4'd0} + {8'd0, h_cnt[10:3]};
-            2'b10: fetch_addr = {v_cnt[7:0], 7'd0} + {1'd0, v_cnt[7:0], 5'd0} + {9'd0, h_cnt[10:2]};
-            2'b11: fetch_addr = {v_cnt[6:0], 8'd0} + {v_cnt[6:0], 6'd0} + {10'd0, h_cnt[10:1]};
+            2'b00: fetch_addr = {1'b0, v_times_40} + {7'd0, h_cnt[10:4]};
+            2'b01: fetch_addr = v_times_80 + {8'd0, h_cnt[10:3]};
+            2'b10: fetch_addr = v_times_160 + {9'd0, h_cnt[10:2]};
+            2'b11: fetch_addr = v_times_320 + {10'd0, h_cnt[10:1]};
         endcase
     end
 
-    // Simple fetch state machine
+    // Video fetch state machine
+    reg [15:0] vram_cache;
+    reg vram_cache_valid;
     reg [2:0] fetch_state;
     reg [17:0] last_fetch_addr;
     
     always @(posedge clk) begin
         if (reset) begin
             vram_rd <= 0;
+            vram_addr <= 25'd0;
             vram_cache_valid <= 0;
             fetch_state <= 0;
-            last_fetch_addr <= 18'hFFFFF;
+            last_fetch_addr <= 18'h3FFFF;
         end else begin
             case (fetch_state)
-                0: begin // Check if need new data
+                0: begin
                     if (fetch_addr != last_fetch_addr && fetch_addr < 153600) begin
                         vram_addr <= {7'd0, fetch_addr};
                         vram_rd <= 1;
@@ -171,7 +177,7 @@ module nubus_video (
                         vram_cache_valid <= 0;
                     end
                 end
-                1: begin // Wait for ready
+                1: begin
                     if (vram_ready) begin
                         vram_cache <= vram_din;
                         vram_cache_valid <= 1;
@@ -243,13 +249,10 @@ module nubus_video (
 
     // CPU Interface
     wire [17:0] vram_word_addr = addr[18:1];
-    reg cpu_vram_req;
-    reg cpu_vram_we;
     reg [1:0] cpu_state;
 
     always @(posedge clk) begin
         irq_clear <= 0;
-        vram_wr <= 0;
 
         if (reset) begin
             ack_n <= 1;
@@ -260,19 +263,21 @@ module nubus_video (
             reg_clut_addr_rd <= 0;
             clut_seq_cnt <= 0;
             cpu_state <= 0;
-            cpu_vram_req <= 0;
+            vram_wr <= 0;
+            vram_dout <= 16'd0;
         end else begin
+            vram_wr <= 0;
+            
             case (cpu_state)
                 0: begin
                     if (select && ack_n) begin
                         if (!rw_n) begin // Write
                             if (addr[23:19] == 5'b00000) begin
-                                // VRAM write
-                                if (vram_word_addr < 153600) begin
+                                // VRAM write - wait for video not accessing
+                                if (vram_word_addr < 153600 && fetch_state == 0) begin
                                     vram_addr <= {7'd0, vram_word_addr};
                                     vram_dout <= data_in;
-                                    cpu_vram_we <= 1;
-                                    cpu_vram_req <= 1;
+                                    vram_wr <= 1;
                                     cpu_state <= 1;
                                 end else begin
                                     ack_n <= 0;
@@ -306,12 +311,11 @@ module nubus_video (
                             end
                         end else begin // Read
                             if (addr[23:19] == 5'b00000) begin
-                                // VRAM read
-                                if (vram_word_addr < 153600) begin
+                                // VRAM read - wait for video not accessing
+                                if (vram_word_addr < 153600 && fetch_state == 0) begin
                                     vram_addr <= {7'd0, vram_word_addr};
-                                    cpu_vram_we <= 0;
-                                    cpu_vram_req <= 1;
-                                    cpu_state <= 1;
+                                    vram_rd <= 1;
+                                    cpu_state <= 2;
                                 end else begin
                                     data_out <= 16'h0000;
                                     ack_n <= 0;
@@ -341,26 +345,18 @@ module nubus_video (
                         ack_n <= 1;
                     end
                 end
-                1: begin // Wait for VRAM access
-                    if (!fetch_state[0]) begin // Video not using SDRAM
-                        if (cpu_vram_we) begin
-                            vram_wr <= 1;
-                            cpu_state <= 2;
-                        end else begin
-                            vram_rd <= 1;
-                            cpu_state <= 2;
-                        end
+                1: begin // Wait for VRAM write complete
+                    if (vram_ready) begin
+                        ack_n <= 0;
+                        vram_wr <= 0;
+                        cpu_state <= 0;
                     end
                 end
-                2: begin // Wait for completion
+                2: begin // Wait for VRAM read complete
                     if (vram_ready) begin
-                        if (!cpu_vram_we) begin
-                            data_out <= vram_din;
-                        end
+                        data_out <= vram_din;
                         ack_n <= 0;
                         vram_rd <= 0;
-                        vram_wr <= 0;
-                        cpu_vram_req <= 0;
                         cpu_state <= 0;
                     end
                 end
