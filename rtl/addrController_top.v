@@ -40,7 +40,7 @@ module addrController_top(
 	output selectROM,
 	output selectSEOverlay,
 	output selectNuBus,
-	
+
 	// video:
 	output hsync,
 	output vsync,
@@ -199,7 +199,8 @@ module addrController_top(
 		.selectSCC(selectSCC),
 		.selectIWM(selectIWM),
 		.selectVIA(selectVIA),
-		.selectSEOverlay(selectSEOverlay));
+		.selectSEOverlay(selectSEOverlay),
+		selectNuBus(selectNuBus));
 
 	// video
 	videoTimer vt(

@@ -148,7 +148,7 @@ module nubus_video (
         (mode == 2'b00) ? (v_times_40 + {7'd0, h_cnt[10:4]}) :
         (mode == 2'b01) ? (v_times_80 + {8'd0, h_cnt[10:3]}) :
         (mode == 2'b10) ? (v_times_160 + {9'd0, h_cnt[10:2]}) :
-                          (v_times_320 + {10'd0, h_cnt[10:1]});
+                          (v_times_320 + {8'd0, h_cnt[10:1]});
 
     // Unified state machine
     reg [15:0] vram_cache;
