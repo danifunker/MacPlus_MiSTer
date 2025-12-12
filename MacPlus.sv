@@ -661,6 +661,14 @@ nubus_video nubus_card (
 	.vga_blank(nubus_blank),
 	.vga_clk(), // unused for now
 	.nmrq_n(nubus_irq_n),
+	
+	// VRAM interface through arbiter
+	.vram_addr(arb_vram_addr),
+	.vram_dout(arb_vram_dout),
+	.vram_din(arb_vram_din),
+	.vram_rd(arb_vram_rd),
+	.vram_wr(arb_vram_wr),
+	.vram_ready(arb_vram_ready),
 
 	.ioctl_wr(ioctl_write),
 	.ioctl_addr({4'd0, dio_a}),
@@ -845,16 +853,17 @@ wire download_cycle = dio_download && dioBusControl;
 
 ////////////////////////// SDRAM /////////////////////////////////
 
-// Status mod: 0=Plus, 1=SE, 2=MacII
-wire [24:0] sdram_addr = download_cycle ? {4'b0001, dio_a[20:0] } :
-                         ~_romOE        ? {4'b0001, 2'b00, status_mod[0], memoryAddr[18:1]} : // Mac II ROM also at 0 offset if mapped there
-                                          {3'b000, (dskReadAckInt || dskReadAckExt), memoryAddr[21:1]};
+// Route Mac system signals through arbiter
+assign arb_mac_addr = download_cycle ? {4'b0001, dio_a[20:0] } :
+                      ~_romOE        ? {4'b0001, 2'b00, status_mod[0], memoryAddr[18:1]} : // Mac II ROM also at 0 offset if mapped there
+                                       {3'b000, (dskReadAckInt || dskReadAckExt), memoryAddr[21:1]};
 
-wire [15:0] sdram_din  = download_cycle ? dio_data              : memoryDataOut;
-wire  [1:0] sdram_ds   = download_cycle ? 2'b11                 : { !_memoryUDS, !_memoryLDS };
-wire        sdram_we   = download_cycle ? dio_write             : !_ramWE;
-wire        sdram_oe   = download_cycle ? 1'b0                  : (!_ramOE || !_romOE || dskReadAckInt || dskReadAckExt);
-wire [15:0] sdram_do   = download_cycle ? 16'hffff : (dskReadAckInt || dskReadAckExt) ? extra_rom_data_demux : sdram_out;
+assign arb_mac_din  = download_cycle ? dio_data              : memoryDataOut;
+assign arb_mac_ds   = download_cycle ? 2'b11                 : { !_memoryUDS, !_memoryLDS };
+assign arb_mac_we   = download_cycle ? dio_write             : !_ramWE;
+assign arb_mac_oe   = download_cycle ? 1'b0                  : (!_ramOE || !_romOE || dskReadAckInt || dskReadAckExt);
+
+wire [15:0] sdram_do   = download_cycle ? 16'hffff : (dskReadAckInt || dskReadAckExt) ? extra_rom_data_demux : arb_mac_dout;
 
 // during rom/disk download ffff is returned so the screen is black during download
 // "extra rom" is used to hold the disk image. It's expected to be byte wide and
@@ -863,6 +872,27 @@ wire [15:0] extra_rom_data_demux = memoryAddr[0]? {sdram_out[7:0],sdram_out[7:0]
 wire [15:0] sdram_out;
 
 assign SDRAM_CKE = 1;
+
+// SDRAM Arbiter signals
+wire [24:0] arb_mac_addr;
+wire [15:0] arb_mac_din;
+wire [15:0] arb_mac_dout;
+wire  [1:0] arb_mac_ds;
+wire        arb_mac_we;
+wire        arb_mac_oe;
+
+wire [24:0] arb_vram_addr;
+wire [15:0] arb_vram_dout;
+wire [15:0] arb_vram_din;
+wire        arb_vram_rd;
+wire        arb_vram_wr;
+wire        arb_vram_ready;
+
+wire [24:0] sdram_addr;
+wire [15:0] sdram_din;
+wire  [1:0] sdram_ds;
+wire        sdram_we;
+wire        sdram_oe;
 
 sdram sdram
 (
@@ -889,6 +919,36 @@ sdram sdram
 	.we             ( sdram_we                 ),
 	.oe             ( sdram_oe                 ),
 	.dout           ( sdram_out                )
+);
+
+// SDRAM Arbiter - share SDRAM between Mac and NuBus video
+sdram_arbiter arbiter (
+	.clk(clk_sys),
+	.reset(n_reset),
+	
+	// Mac system port
+	.mac_addr(arb_mac_addr),
+	.mac_din(arb_mac_din),
+	.mac_dout(arb_mac_dout),
+	.mac_ds(arb_mac_ds),
+	.mac_we(arb_mac_we),
+	.mac_oe(arb_mac_oe),
+	
+	// Video card port  
+	.vram_addr(arb_vram_addr),
+	.vram_dout(arb_vram_dout),
+	.vram_din(arb_vram_din),
+	.vram_rd(arb_vram_rd),
+	.vram_wr(arb_vram_wr),
+	.vram_ready(arb_vram_ready),
+	
+	// SDRAM controller
+	.sdram_addr(sdram_addr),
+	.sdram_din(sdram_din),
+	.sdram_dout(sdram_out),
+	.sdram_ds(sdram_ds),
+	.sdram_we(sdram_we),
+	.sdram_oe(sdram_oe)
 );
 
 endmodule
