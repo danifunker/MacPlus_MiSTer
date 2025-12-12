@@ -40,8 +40,9 @@ module nubus_video (
     parameter V_SYNC_START = 480 + 3;
     parameter V_SYNC_END = 480 + 3 + 3;
 
-    // VRAM (512KB)
-    (* ramstyle = "no_rw_check" *) reg [7:0] vram [0:524287];
+    // VRAM (300KB - Exact 640x480)
+    // Reducing from 512KB to save resources and prevent compilation hang.
+    (* ramstyle = "no_rw_check, M10K" *) reg [7:0] vram [0:307199];
 
     // CLUT (Color Look-Up Table) - 256 entries x 24 bits
     reg [23:0] clut [0:255];
@@ -53,7 +54,7 @@ module nubus_video (
     reg [7:0] reg_control;       // 0x080000
     reg [7:0] reg_pixel_mask;    // 0x080018
     reg [7:0] reg_clut_addr_wr;  // 0x080010
-    reg [7:0] reg_clut_addr_rd;  // 0x08001C
+    (* keep *) reg [7:0] reg_clut_addr_rd;  // 0x08001C
     reg [1:0] clut_seq_cnt;      // 0=Red, 1=Green, 2=Blue
     reg [23:0] clut_temp_data;   // Temp storage for RGB
 
@@ -66,7 +67,7 @@ module nubus_video (
     // 00=1bpp, 01=2bpp, 10=4bpp, 11=8bpp
     wire [1:0] mode = reg_control[5:4];
     wire video_en = reg_control[7];
-    wire sync_green = reg_control[6]; // Not used for VGA output here, but stored
+    // wire sync_green = reg_control[6]; // Unused
     wire irq_en = reg_control[0];
 
     // Video Counters
@@ -207,6 +208,8 @@ module nubus_video (
     end
 
     // NuBus Interface
+    wire [18:0] vram_offset = addr[18:0]; // 512KB space address
+
     always @(posedge clk) begin
         irq_clear <= 0;
 
@@ -223,12 +226,14 @@ module nubus_video (
 
                 // Write Access
                 if (!rw_n) begin
-                    // VRAM: 0x000000 - 0x07FFFF (512KB)
+                    // VRAM: 0x000000 - 0x07FFFF (512KB space)
                     if (addr[23:19] == 5'b00000) begin
-                        if (uds_lds[1]) // Upper byte (even)
-                            vram[addr[18:0] & 19'h7FFFF] <= data_in[15:8];
-                        if (uds_lds[0]) // Lower byte (odd)
-                            vram[(addr[18:0] & 19'h7FFFF) | 1] <= data_in[7:0];
+                        // Check bounds for reduced VRAM size
+                        if (uds_lds[1] && (vram_offset < 307200))
+                            vram[vram_offset] <= data_in[15:8];
+
+                        if (uds_lds[0] && ((vram_offset | 1) < 307200))
+                            vram[vram_offset | 1] <= data_in[7:0];
                     end
 
                     // Registers: 0x08xxxx
@@ -282,8 +287,11 @@ module nubus_video (
 
                     // VRAM
                     if (addr[23:19] == 5'b00000) begin
-                         if (uds_lds[1]) data_out[15:8] <= vram[addr[18:0] & 19'h7FFFF];
-                         if (uds_lds[0]) data_out[7:0]  <= vram[(addr[18:0] & 19'h7FFFF) | 1];
+                         if (uds_lds[1] && (vram_offset < 307200))
+                            data_out[15:8] <= vram[vram_offset];
+
+                         if (uds_lds[0] && ((vram_offset | 1) < 307200))
+                            data_out[7:0]  <= vram[vram_offset | 1];
                     end
 
                     // Registers
