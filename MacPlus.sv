@@ -346,6 +346,7 @@ assign CE_PIXEL  = 1;
 
 wire [15:0] nubusDataOut;
 wire nubusAck;
+wire nubus_irq_n;
 wire [7:0] nubus_r, nubus_g, nubus_b;
 wire nubus_hs, nubus_vs, nubus_blank;
 
@@ -660,6 +661,7 @@ nubus_video nubus_card (
 	.vga_vs(nubus_vs),
 	.vga_blank(nubus_blank),
 	.vga_clk(), // unused for now
+	.nmrq_n(nubus_irq_n),
 
 	.ioctl_wr(ioctl_write),
 	.ioctl_addr({4'd0, dio_a}),
@@ -683,7 +685,10 @@ dataController_top #(SCSI_DEVS) dc0
 	._cpuLDS(_cpuLDS),
 	._cpuRW(_cpuRW),
 	._cpuVMA(_cpuVMA),
-	.cpuDataIn(selectNuBus ? nubusDataOut : cpuDataOut),
+	.selectNuBus(selectNuBus),
+	.nubusDataIn(nubusDataOut),
+	.nubus_irq_n(nubus_irq_n),
+	.cpuDataIn(cpuDataOut),
 	.cpuDataOut(dataControllerDataOut),
 	.cpuAddrRegHi(cpuAddr[12:9]),
 	.cpuAddrRegMid(cpuAddr[6:4]),  // for SCSI
