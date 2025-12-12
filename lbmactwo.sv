@@ -207,7 +207,7 @@ video_freak video_freak
 
 `include "build_id.v"
 localparam CONF_STR = {
-	"MACPLUS;UART115200;",
+	"LBMACTWO;UART115200;",
 	"-;",
 	"F1,DSK,Mount Pri Floppy;",
 	"F2,DSK,Mount Sec Floppy;",
