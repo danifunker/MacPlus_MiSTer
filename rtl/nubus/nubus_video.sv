@@ -153,24 +153,24 @@ module nubus_video (
         byte_sel = 1'b0;
         case (mode)
             2'b00: begin // 1bpp
-                // (v * 40) + (h >> 4)
-                fetch_addr = (v_cnt * 18'd40) + (h_cnt >> 4);
-                byte_sel = (h_cnt[3] == 0) ? 1'b0 : 1'b1;
+                // (v * 40) = v * 32 + v * 8 = (v << 5) + (v << 3)
+                fetch_addr = ({v_cnt, 5'd0} + {v_cnt, 3'd0}) + {7'd0, h_cnt[10:4]};
+                byte_sel = h_cnt[3];
             end
             2'b01: begin // 2bpp
-                // (v * 80) + (h >> 3)
-                fetch_addr = (v_cnt * 18'd80) + (h_cnt >> 3);
-                byte_sel = (h_cnt[2] == 0) ? 1'b0 : 1'b1;
+                // (v * 80) = v * 64 + v * 16 = (v << 6) + (v << 4)
+                fetch_addr = ({v_cnt, 6'd0} + {v_cnt, 4'd0}) + {8'd0, h_cnt[10:3]};
+                byte_sel = h_cnt[2];
             end
             2'b10: begin // 4bpp
-                // (v * 160) + (h >> 2)
-                fetch_addr = (v_cnt * 18'd160) + (h_cnt >> 2);
-                byte_sel = (h_cnt[1] == 0) ? 1'b0 : 1'b1;
+                // (v * 160) = v * 128 + v * 32 = (v << 7) + (v << 5)
+                fetch_addr = ({v_cnt, 7'd0} + {v_cnt, 5'd0}) + {9'd0, h_cnt[10:2]};
+                byte_sel = h_cnt[1];
             end
             2'b11: begin // 8bpp
-                // (v * 320) + (h >> 1)
-                fetch_addr = (v_cnt * 18'd320) + (h_cnt >> 1);
-                byte_sel = (h_cnt[0] == 0) ? 1'b0 : 1'b1;
+                // (v * 320) = v * 256 + v * 64 = (v << 8) + (v << 6)
+                fetch_addr = ({v_cnt, 8'd0} + {v_cnt, 6'd0}) + {10'd0, h_cnt[10:1]};
+                byte_sel = h_cnt[0];
             end
         endcase
     end
@@ -293,7 +293,7 @@ module nubus_video (
                                     1: begin clut_temp_data[15:8]  <= data_in[15:8]; clut_seq_cnt <= 2; end
                                     2: begin
                                         clut[reg_clut_addr_wr] <= {clut_temp_data[23:16], clut_temp_data[15:8], data_in[15:8]};
-                                        reg_clut_addr_wr <= reg_clut_addr_wr + 1;
+                                        reg_clut_addr_wr <= reg_clut_addr_wr + 8'd1;
                                         clut_seq_cnt <= 0;
                                     end
                                 endcase
