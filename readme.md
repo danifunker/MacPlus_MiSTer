@@ -1,4 +1,4 @@
-# Macintosh Plus for the [MiSTer Board](https://github.com/MiSTer-devel/Main_MiSTer/wiki)
+# Little Big Mac 2 for the [MiSTer Board](https://github.com/MiSTer-devel/Main_MiSTer/wiki)
 
 This is a port of the [Plus Too core](https://github.com/mist-devel/mist-binaries/tree/master/cores/plus_too) from MiST which is the port of the [Plus Too project](http://www.bigmessowires.com/plus-too/).
 
@@ -7,10 +7,10 @@ I've tried to optimize the code by converting to synchronous style and fixing so
 ## Usage
 
 * Copy the [*.rbf](https://github.com/MiSTer-devel/MacPlus_MiSTer/tree/master/releases) onto the root of SD card
-* Copy [boot0.rom & boot1.rom](https://github.com/MiSTer-devel/MacPlus_MiSTer/tree/master/releases) (Plus and SE ROM files) to MacPlus folder
-* Copy disk images in dsk format (e.g. Disk605.dsk) to MacPlus folder
+* Copy [boot0.rom & boot1.rom](https://github.com/MiSTer-devel/MacPlus_MiSTer/tree/master/releases) (Plus and SE ROM files) to lbmactwo folder
+* Copy disk images in dsk format (e.g. Disk605.dsk) to lbmactwo folder
 
-After a few seconds, the floppy disk icon should appear. Open the on-screen display using the F12 key and select the a disk image. The upload of the disk image will take a few seconds. If a bootable system is found on disk, a smiling Mac icon will appear. MacPlus will then begin booting into the desktop.
+After a few seconds, the floppy disk icon should appear. Open the on-screen display using the F12 key and select the a disk image. The upload of the disk image will take a few seconds. If a bootable system is found on disk, a smiling Mac icon will appear. lbmactwo will then begin booting into the desktop.
 
 ## Floppy disk support
 
@@ -28,9 +28,9 @@ Official system disk images are available from an archived Apple support page [h
 
 ## Hard disk support
 
-The MacPlus core supports SCSI hard drive images up to 2GB (HFS) in size, with a .vhd extension. The core currently implements only a subset of the SCSI commands. This is sufficient to read and write the disk, to boot from it, and to format it using the setup tools that come with System 6.0.8.
+The lbmactwo core supports SCSI hard drive images up to 2GB (HFS) in size, with a .vhd extension. The core currently implements only a subset of the SCSI commands. This is sufficient to read and write the disk, to boot from it, and to format it using the setup tools that come with System 6.0.8.
 
-The harddisk image to be used can be selected from the "Mount *.vhd" entry in the on-screen-display. Copy the boot.vhd to MacPlus folder and it will be automatically mounted at start. The format of the disk image is the same as the one used by the SCSI2SD project, documented [here](http://www.codesrc.com/mediawiki/index.php?title=HFSFromScratch).
+The harddisk image to be used can be selected from the "Mount *.vhd" entry in the on-screen-display. Copy the boot.vhd to lbmactwo folder and it will be automatically mounted at start. The format of the disk image is the same as the one used by the SCSI2SD project, documented [here](http://www.codesrc.com/mediawiki/index.php?title=HFSFromScratch).
 
 Unlike the floppy, the SCSI disk is writable and data can be written to the disk from within the core.
 

@@ -34,8 +34,8 @@ module nubus_video (
     parameter V_RES = 480;
 
     // Timing constants for 66.67Hz (Apple High-Res)
-    // Pixel Clock: 30.24 MHz (approx). Using system clock (usually 32MHz in MacPlus core?)
-    // MacPlus core clk_sys is ~32.5MHz.
+    // Pixel Clock: 30.24 MHz (approx). Using system clock (usually 32MHz in lbmactwo core?)
+    // lbmactwo core clk_sys is ~32.5MHz.
     // 640x480 @ 66.67Hz:
     // H Total: 864 pixels
     // V Total: 525 lines

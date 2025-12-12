@@ -1741,7 +1741,7 @@ reg  [1:0] sl_r;
 wire [1:0] sl = sl_r;
 always @(posedge clk_sys) sl_r <= FB_EN ? 2'b00 : scanlines;
 
-emu emu
+lbmactwo emu
 (
 	.CLK_50M(FPGA_CLK2_50),
 	.RESET(reset),
