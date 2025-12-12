@@ -142,23 +142,23 @@ module nubus_video (
         case (mode)
             2'b00: begin // 1bpp
                 // (v * 40) + (h >> 4)
-                fetch_addr = (v_cnt * 40) + (h_cnt >> 4);
-                byte_sel = (h_cnt[3] == 0) ? 0 : 1;
+                fetch_addr = (v_cnt * 18'd40) + (h_cnt >> 4);
+                byte_sel = (h_cnt[3] == 0) ? 1'b0 : 1'b1;
             end
             2'b01: begin // 2bpp
                 // (v * 80) + (h >> 3)
-                fetch_addr = (v_cnt * 80) + (h_cnt >> 3);
-                byte_sel = (h_cnt[2] == 0) ? 0 : 1;
+                fetch_addr = (v_cnt * 18'd80) + (h_cnt >> 3);
+                byte_sel = (h_cnt[2] == 0) ? 1'b0 : 1'b1;
             end
             2'b10: begin // 4bpp
                 // (v * 160) + (h >> 2)
-                fetch_addr = (v_cnt * 160) + (h_cnt >> 2);
-                byte_sel = (h_cnt[1] == 0) ? 0 : 1;
+                fetch_addr = (v_cnt * 18'd160) + (h_cnt >> 2);
+                byte_sel = (h_cnt[1] == 0) ? 1'b0 : 1'b1;
             end
             2'b11: begin // 8bpp
                 // (v * 320) + (h >> 1)
-                fetch_addr = (v_cnt * 320) + (h_cnt >> 1);
-                byte_sel = (h_cnt[0] == 0) ? 0 : 1;
+                fetch_addr = (v_cnt * 18'd320) + (h_cnt >> 1);
+                byte_sel = (h_cnt[0] == 0) ? 1'b0 : 1'b1;
             end
         endcase
     end
