@@ -37,12 +37,13 @@ module sdram_arbiter (
     output        sdram_oe
 );
 
-    // Detect Mac system activity
-    wire mac_active = mac_we | mac_oe;
+    // Detect Mac system activity (registered for Quartus compatibility)
+    wire mac_active;
+    assign mac_active = mac_we | mac_oe;
     
-    // Grant signals
-    wire grant_mac = mac_active;
-    wire grant_video = !mac_active & (vram_rd | vram_wr);
+    // Grant signals (Mac has priority over video)
+    wire grant_video;
+    assign grant_video = !mac_active & (vram_rd | vram_wr);
     
     // Multiplex SDRAM signals
     assign sdram_addr = grant_video ? vram_addr : mac_addr;
@@ -51,7 +52,7 @@ module sdram_arbiter (
     assign sdram_we   = grant_video ? vram_wr : mac_we;
     assign sdram_oe   = grant_video ? vram_rd : mac_oe;
     
-    // Route readback data
+    // Route readback data (direct connection, no muxing needed)
     assign mac_dout = sdram_dout;
     assign vram_din = sdram_dout;
     
@@ -60,17 +61,20 @@ module sdram_arbiter (
     // The SDRAM controller cycles through 8 states at 64MHz (clk_mem)
     // synchronized to 8MHz (clk_8). Since clk_sys is ~32MHz (4x clk_8),
     // each SDRAM operation takes approximately 4 clk_sys cycles.
-    reg [2:0] vram_op_d;
+    //
+    // Handshake: Video asserts rd/wr -> arbiter grants -> after 4 cycles
+    // arbiter asserts vram_ready -> video latches data and drops rd/wr
+    reg [3:0] vram_op_d;
     always @(posedge clk) begin
         if (reset) begin
-            vram_op_d <= 3'b000;
+            vram_op_d <= 4'b0000;
         end else begin
-            vram_op_d <= {vram_op_d[1:0], grant_video};
+            vram_op_d <= {vram_op_d[2:0], grant_video};
         end
     end
     
-    // Ready goes high 4 cycles after operation was granted
-    // This matches one complete clk_8 SDRAM cycle
-    assign vram_ready = vram_op_d[2] & !grant_video;
+    // Ready pulses high on 4th cycle when operation completes
+    // Use edge detection: ready when we've been granted for 4 cycles
+    assign vram_ready = vram_op_d[3] & grant_video;
 
 endmodule
