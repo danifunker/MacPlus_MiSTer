@@ -41,8 +41,9 @@ module nubus_video (
     parameter V_SYNC_END = 480 + 3 + 3;
 
     // VRAM (300KB - Exact 640x480)
-    // Reducing from 512KB to save resources and prevent compilation hang.
-    (* ramstyle = "no_rw_check, M10K" *) reg [7:0] vram [0:307199];
+    // 16-bit width to allow Byte Enable inference
+    // 307200 bytes = 153600 words
+    (* ramstyle = "no_rw_check, M10K" *) reg [15:0] vram [0:153599];
 
     // CLUT (Color Look-Up Table) - 256 entries x 24 bits
     reg [23:0] clut [0:255];
@@ -54,7 +55,7 @@ module nubus_video (
     reg [7:0] reg_control;       // 0x080000
     reg [7:0] reg_pixel_mask;    // 0x080018
     reg [7:0] reg_clut_addr_wr;  // 0x080010
-    (* keep *) reg [7:0] reg_clut_addr_rd;  // 0x08001C
+    reg [7:0] reg_clut_addr_rd;  // 0x08001C
     reg [1:0] clut_seq_cnt;      // 0=Red, 1=Green, 2=Blue
     reg [23:0] clut_temp_data;   // Temp storage for RGB
 
@@ -67,7 +68,6 @@ module nubus_video (
     // 00=1bpp, 01=2bpp, 10=4bpp, 11=8bpp
     wire [1:0] mode = reg_control[5:4];
     wire video_en = reg_control[7];
-    // wire sync_green = reg_control[6]; // Unused
     wire irq_en = reg_control[0];
 
     // Video Counters
@@ -95,26 +95,25 @@ module nubus_video (
     assign vga_clk = clk;
 
     // Interrupt Generation (VBL)
-    // Trigger on start of VBL (v_cnt == V_RES)
     reg vbl_pulse;
     always @(posedge clk) begin
         if (reset) begin
-            h_cnt <= 0;
-            v_cnt <= 0;
+            h_cnt <= 11'd0;
+            v_cnt <= 11'd0;
             vbl_pulse <= 0;
         end else begin
             vbl_pulse <= 0;
             if (h_cnt == H_TOTAL - 1) begin
-                h_cnt <= 0;
+                h_cnt <= 11'd0;
                 if (v_cnt == V_TOTAL - 1) begin
-                    v_cnt <= 0;
+                    v_cnt <= 11'd0;
                 end else begin
-                    v_cnt <= v_cnt + 1;
+                    v_cnt <= v_cnt + 11'd1;
                     if (v_cnt == V_RES - 1) // Next is V_RES (Start of VBlank)
                         vbl_pulse <= 1;
                 end
             end else begin
-                h_cnt <= h_cnt + 1;
+                h_cnt <= h_cnt + 11'd1;
             end
         end
     end
@@ -125,11 +124,9 @@ module nubus_video (
             irq_active <= 0;
             nmrq_n <= 1;
         end else begin
-            // Set IRQ on VBL if enabled
             if (vbl_pulse && irq_en)
                 irq_active <= 1;
 
-            // Clear IRQ on write to 0x080004
             if (irq_clear)
                 irq_active <= 0;
 
@@ -138,25 +135,48 @@ module nubus_video (
     end
 
     // Video Output Logic
-    reg [7:0] vram_byte;
-    reg [7:0] pixel_idx;
-
-    // Calculate VRAM address based on x, y and mode
-    reg [19:0] fetch_addr;
+    reg [17:0] fetch_addr;
+    reg byte_sel;
 
     always @(*) begin
         case (mode)
-            2'b00: fetch_addr = (v_cnt * 80) + (h_cnt >> 3);
-            2'b01: fetch_addr = (v_cnt * 160) + (h_cnt >> 2);
-            2'b10: fetch_addr = (v_cnt * 320) + (h_cnt >> 1);
-            2'b11: fetch_addr = (v_cnt * 640) + h_cnt;
+            2'b00: begin // 1bpp
+                // (v * 40) + (h >> 4)
+                fetch_addr = (v_cnt * 40) + (h_cnt >> 4);
+                byte_sel = (h_cnt[3] == 0) ? 0 : 1;
+            end
+            2'b01: begin // 2bpp
+                // (v * 80) + (h >> 3)
+                fetch_addr = (v_cnt * 80) + (h_cnt >> 3);
+                byte_sel = (h_cnt[2] == 0) ? 0 : 1;
+            end
+            2'b10: begin // 4bpp
+                // (v * 160) + (h >> 2)
+                fetch_addr = (v_cnt * 160) + (h_cnt >> 2);
+                byte_sel = (h_cnt[1] == 0) ? 0 : 1;
+            end
+            2'b11: begin // 8bpp
+                // (v * 320) + (h >> 1)
+                fetch_addr = (v_cnt * 320) + (h_cnt >> 1);
+                byte_sel = (h_cnt[0] == 0) ? 0 : 1;
+            end
         endcase
     end
 
-    // Fetch VRAM
+    // Fetch VRAM (Word)
+    reg [15:0] vram_word;
     always @(posedge clk) begin
-        vram_byte <= vram[fetch_addr];
+        vram_word <= vram[fetch_addr];
     end
+
+    // Delayed byte select
+    reg byte_sel_d;
+    always @(posedge clk) begin
+        byte_sel_d <= byte_sel;
+    end
+
+    // Select Byte
+    wire [7:0] vram_byte = (byte_sel_d == 0) ? vram_word[15:8] : vram_word[7:0];
 
     // Pipelined h_cnt for pixel extraction
     reg [2:0] h_cnt_d;
@@ -164,13 +184,14 @@ module nubus_video (
         h_cnt_d <= h_cnt[2:0];
     end
 
-    // Extract Pixel Index using delayed count
+    reg [7:0] pixel_idx;
+    // Extract Pixel Index
     always @(*) begin
         case (mode)
-            2'b00: // 1bpp (8 pixels/byte) - Bit 7 is leftmost
+            2'b00: // 1bpp
                 pixel_idx = {7'b0, vram_byte[7 - h_cnt_d]};
 
-            2'b01: // 2bpp (4 pixels/byte) - Bits 7:6 first
+            2'b01: // 2bpp
                 case (h_cnt_d[1:0])
                     2'b00: pixel_idx = {6'b0, vram_byte[7:6]};
                     2'b01: pixel_idx = {6'b0, vram_byte[5:4]};
@@ -178,7 +199,7 @@ module nubus_video (
                     2'b11: pixel_idx = {6'b0, vram_byte[1:0]};
                 endcase
 
-            2'b10: // 4bpp (2 pixels/byte) - Bits 7:4 first
+            2'b10: // 4bpp
                 case (h_cnt_d[0])
                     1'b0: pixel_idx = {4'b0, vram_byte[7:4]};
                     1'b1: pixel_idx = {4'b0, vram_byte[3:0]};
@@ -192,7 +213,6 @@ module nubus_video (
     // Apply Pixel Mask and Lookup CLUT
     wire [7:0] masked_idx = pixel_idx & reg_pixel_mask;
 
-    // Output RGB (with blanking from pipelined signal)
     assign vga_r = vga_blank ? 8'h00 : clut[masked_idx][23:16];
     assign vga_g = vga_blank ? 8'h00 : clut[masked_idx][15:8];
     assign vga_b = vga_blank ? 8'h00 : clut[masked_idx][7:0];
@@ -208,14 +228,14 @@ module nubus_video (
     end
 
     // NuBus Interface
-    wire [18:0] vram_offset = addr[18:0]; // 512KB space address
+    wire [17:0] vram_word_addr = addr[18:1];
 
     always @(posedge clk) begin
         irq_clear <= 0;
 
         if (reset) begin
             ack_n <= 1;
-            reg_control <= 0; // Default 1bpp, Blank
+            reg_control <= 0;
             reg_pixel_mask <= 8'hFF;
             reg_clut_addr_wr <= 0;
             reg_clut_addr_rd <= 0;
@@ -224,88 +244,56 @@ module nubus_video (
             if (ack_n) begin
                 ack_n <= 0; // Assert ACK
 
-                // Write Access
-                if (!rw_n) begin
-                    // VRAM: 0x000000 - 0x07FFFF (512KB space)
+                if (!rw_n) begin // Write
+                    // VRAM
                     if (addr[23:19] == 5'b00000) begin
-                        // Check bounds for reduced VRAM size
-                        if (uds_lds[1] && (vram_offset < 307200))
-                            vram[vram_offset] <= data_in[15:8];
-
-                        if (uds_lds[0] && ((vram_offset | 1) < 307200))
-                            vram[vram_offset | 1] <= data_in[7:0];
+                        if (vram_word_addr < 153600) begin
+                            if (uds_lds[1]) vram[vram_word_addr][15:8] <= data_in[15:8];
+                            if (uds_lds[0]) vram[vram_word_addr][7:0]  <= data_in[7:0];
+                        end
                     end
-
-                    // Registers: 0x08xxxx
+                    // Registers
                     else if (addr[23:16] == 8'h08) begin
                         case (addr[15:0])
-                            // TFB Control: 0x080000
                             16'h0000: if (uds_lds[1]) reg_control <= data_in[15:8];
-
-                            // IRQ Ack: 0x080004
                             16'h0004: if (uds_lds[1]) irq_clear <= 1;
-
-                            // CLUT Write Address: 0x080010
                             16'h0010: if (uds_lds[1]) begin
                                 reg_clut_addr_wr <= data_in[15:8];
                                 clut_seq_cnt <= 0;
                             end
-
-                            // CLUT Data: 0x080014
                             16'h0014: if (uds_lds[1]) begin
                                 case (clut_seq_cnt)
-                                    0: begin // Red
-                                        clut_temp_data[23:16] <= data_in[15:8];
-                                        clut_seq_cnt <= 1;
-                                    end
-                                    1: begin // Green
-                                        clut_temp_data[15:8] <= data_in[15:8];
-                                        clut_seq_cnt <= 2;
-                                    end
-                                    2: begin // Blue
+                                    0: begin clut_temp_data[23:16] <= data_in[15:8]; clut_seq_cnt <= 1; end
+                                    1: begin clut_temp_data[15:8]  <= data_in[15:8]; clut_seq_cnt <= 2; end
+                                    2: begin
                                         clut[reg_clut_addr_wr] <= {clut_temp_data[23:16], clut_temp_data[15:8], data_in[15:8]};
                                         reg_clut_addr_wr <= reg_clut_addr_wr + 1;
                                         clut_seq_cnt <= 0;
                                     end
                                 endcase
                             end
-
-                            // Pixel Mask: 0x080018
                             16'h0018: if (uds_lds[1]) reg_pixel_mask <= data_in[15:8];
-
-                            // CLUT Read Address: 0x08001C
-                            16'h001C: if (uds_lds[1]) begin
-                                reg_clut_addr_rd <= data_in[15:8];
-                            end
+                            16'h001C: if (uds_lds[1]) reg_clut_addr_rd <= data_in[15:8];
                         endcase
                     end
-                end
-
-                // Read Access
-                else begin
+                end else begin // Read
                     data_out <= 0;
 
                     // VRAM
                     if (addr[23:19] == 5'b00000) begin
-                         if (uds_lds[1] && (vram_offset < 307200))
-                            data_out[15:8] <= vram[vram_offset];
-
-                         if (uds_lds[0] && ((vram_offset | 1) < 307200))
-                            data_out[7:0]  <= vram[vram_offset | 1];
+                         if (vram_word_addr < 153600)
+                            data_out <= vram[vram_word_addr];
                     end
-
                     // Registers
                     else if (addr[23:16] == 8'h08) begin
                          case (addr[15:0])
-                            // Monitor Sense: 0x080008
                             16'h0008: data_out[15:8] <= 8'b00000011;
-
-                            // Pixel Mask: 0x080018
                             16'h0018: data_out[15:8] <= reg_pixel_mask;
+                            // Readback for CLUT Read Address to suppress unused warning
+                            16'h001C: data_out[15:8] <= reg_clut_addr_rd;
                          endcase
                     end
-
-                    // ROM: 0xF00000 - 0xFFFFFF (Mapped to 32KB at top)
+                    // ROM
                     else if (addr[23:20] == 4'hF) begin
                         data_out[15:8] <= rom[addr[14:0]];
                         data_out[7:0] <= rom[addr[14:0]];
