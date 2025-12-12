@@ -45,7 +45,7 @@ module nubus_video (
     // VRAM (300KB - Exact 640x480)
     // 16-bit width to allow Byte Enable inference
     // 307200 bytes = 153600 words
-    (* ramstyle = "no_rw_check, M10K" *) reg [15:0] vram [0:153599];
+    (* ramstyle = "M10K, no_rw_check" *) reg [15:0] vram [0:153599];
 
     // CLUT (Color Look-Up Table) - 256 entries x 24 bits
     reg [23:0] clut [0:255];
@@ -147,29 +147,42 @@ module nubus_video (
     // Video Output Logic
     reg [17:0] fetch_addr;
     reg byte_sel;
+    
+    // Intermediate address calculation wires - properly sized
+    wire [15:0] v_shift5_1bpp = {v_cnt[9:0], 5'd0};  // v<<5
+    wire [13:0] v_shift3_1bpp = {v_cnt[9:0], 3'd0};  // v<<3
+    wire [17:0] v_base_addr_1bpp = v_shift5_1bpp + {4'd0, v_shift3_1bpp};  // v*40
+    
+    wire [16:0] v_shift6_2bpp = {v_cnt[8:0], 6'd0};  // v<<6
+    wire [14:0] v_shift4_2bpp = {v_cnt[8:0], 4'd0};  // v<<4
+    wire [17:0] v_base_addr_2bpp = {1'b0, v_shift6_2bpp} + {3'd0, v_shift4_2bpp};  // v*80
+    
+    wire [17:0] v_shift7_4bpp = {v_cnt[7:0], 7'd0};  // v<<7
+    wire [15:0] v_shift5_4bpp = {v_cnt[7:0], 5'd0};  // v<<5
+    wire [17:0] v_base_addr_4bpp = v_shift7_4bpp + {2'd0, v_shift5_4bpp};  // v*160
+    
+    wire [17:0] v_shift8_8bpp = {v_cnt[6:0], 8'd0};  // v<<8
+    wire [16:0] v_shift6_8bpp = {v_cnt[6:0], 6'd0};  // v<<6
+    wire [17:0] v_base_addr_8bpp = v_shift8_8bpp + {1'd0, v_shift6_8bpp};  // v*320
 
     always @(*) begin
         fetch_addr = 18'd0;
         byte_sel = 1'b0;
         case (mode)
             2'b00: begin // 1bpp
-                // (v * 40) = v * 32 + v * 8 = (v << 5) + (v << 3)
-                fetch_addr = ({v_cnt, 5'd0} + {v_cnt, 3'd0}) + {7'd0, h_cnt[10:4]};
+                fetch_addr = v_base_addr_1bpp + {7'd0, h_cnt[10:4]};
                 byte_sel = h_cnt[3];
             end
             2'b01: begin // 2bpp
-                // (v * 80) = v * 64 + v * 16 = (v << 6) + (v << 4)
-                fetch_addr = ({v_cnt, 6'd0} + {v_cnt, 4'd0}) + {8'd0, h_cnt[10:3]};
+                fetch_addr = v_base_addr_2bpp + {8'd0, h_cnt[10:3]};
                 byte_sel = h_cnt[2];
             end
             2'b10: begin // 4bpp
-                // (v * 160) = v * 128 + v * 32 = (v << 7) + (v << 5)
-                fetch_addr = ({v_cnt, 7'd0} + {v_cnt, 5'd0}) + {9'd0, h_cnt[10:2]};
+                fetch_addr = v_base_addr_4bpp + {9'd0, h_cnt[10:2]};
                 byte_sel = h_cnt[1];
             end
             2'b11: begin // 8bpp
-                // (v * 320) = v * 256 + v * 64 = (v << 8) + (v << 6)
-                fetch_addr = ({v_cnt, 8'd0} + {v_cnt, 6'd0}) + {10'd0, h_cnt[10:1]};
+                fetch_addr = v_base_addr_8bpp + {10'd0, h_cnt[10:1]};
                 byte_sel = h_cnt[0];
             end
         endcase
