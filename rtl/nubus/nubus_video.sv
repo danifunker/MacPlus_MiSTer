@@ -6,6 +6,7 @@ module nubus_video (
     input [31:0] addr,
     input [15:0] data_in,
     output reg [15:0] data_out,
+    // uds_lds are Active High here (inverted from _cpuUDS/_cpuLDS in top level)
     input [1:0] uds_lds, // {uds, lds} - 1=active
     input rw_n, // 1=read, 0=write
     input select, // Chip select
@@ -22,6 +23,7 @@ module nubus_video (
     output vga_clk,
 
     // IOCTL Interface for ROM Download
+    // Assumes WIDE(1) in hps_io (16-bit data)
     input        ioctl_wr,
     input [24:0] ioctl_addr,
     input [15:0] ioctl_data, // 16-bit data from HPS
@@ -189,7 +191,7 @@ module nubus_video (
     always @(*) begin
         case (mode)
             2'b00: // 1bpp
-                pixel_idx = {7'b0, vram_byte[7 - h_cnt_d]};
+                pixel_idx = {7'b0, vram_byte[3'd7 - h_cnt_d]};
 
             2'b01: // 2bpp
                 case (h_cnt_d[1:0])
