@@ -218,11 +218,9 @@ localparam CONF_STR = {
 	"O78,Aspect ratio,Original,Full Screen,[ARC1],[ARC2];",
 	"OBC,Scale,Normal,V-Integer,Narrower HV-Integer,Wider HV-Integer;",
 	"-;",
-	"O9A,Model,Plus,SE,Macintosh II;",
 	"O5,Speed,8MHz,16MHz;",
 	"ODE,CPU,68000,68010,68020;",
 	"O4,Memory,1MB,4MB;",
-	"S4,ROM,Load NuBus Video ROM;",
 	"-;",
 	//"OA,Serial,Off,On;",
 	//"-;",
@@ -349,7 +347,7 @@ wire nubus_irq_n;
 wire [7:0] nubus_r, nubus_g, nubus_b;
 wire nubus_hs, nubus_vs, nubus_blank;
 
-wire video_from_nubus = (status_mod == 2'd2); // Mac II mode uses NuBus video
+wire video_from_nubus = 1'b1; // Mac II always uses NuBus video
 
 assign VGA_R  = video_from_nubus ? nubus_r : {8{pixelOut}};
 assign VGA_G  = video_from_nubus ? nubus_g : {8{pixelOut}};
@@ -603,7 +601,7 @@ addrController_top ac0
 	._cpuRW(_cpuRW),
 	._cpuAS(_cpuAS),
 	.turbo(status_turbo),
-	.configROMSize((status_mod == 0) ? 2'b01 : 2'b10), // 0=Plus(128K), 1=SE(256K), 2=MacII(256K)
+	.configROMSize(2'b10), // Mac II always uses 256K ROM
 	.configRAMSize(configRAMSize),
 	.memoryAddr(memoryAddr),
 	.memoryLatch(memoryLatch),
@@ -684,7 +682,7 @@ dataController_top #(SCSI_DEVS) dc0
 	.clk8_en_n(clk8_en_n),
 	.E_rising(E_rising),
 	.E_falling(E_falling),
-	.machineType(status_mod[0]),
+	.machineType(1'b1), // Mac II mode
 	._systemReset(n_reset),
 	._cpuReset(_cpuReset),
 	._cpuIPL(_cpuIPL),
@@ -797,7 +795,7 @@ always @(posedge clk_sys) begin
 	reg old_down;
 
 	old_down <= dio_download;
-	if(old_down && ~dio_download && dio_index == 1) begin
+	if(old_down && ~dio_download && dio_index == 2) begin
 		dsk_int_ds <= (dio_addr == 409600);   // double sides disk, addr counts words, not bytes
 		dsk_int_ss <= (dio_addr == 204800);   // single sided disk
 	end
@@ -812,7 +810,7 @@ always @(posedge clk_sys) begin
 	reg old_down;
 
 	old_down <= dio_download;
-	if(old_down && ~dio_download && dio_index == 2) begin
+	if(old_down && ~dio_download && dio_index == 3) begin
 		dsk_ext_ds <= (dio_addr == 409600);   // double sided disk, addr counts words, not bytes
 		dsk_ext_ss <= (dio_addr == 204800);   // single sided disk
 	end
@@ -834,10 +832,17 @@ always @(posedge clk_sys) begin
 	if(ioctl_write) begin
 		dio_data <= {ioctl_data[7:0], ioctl_data[15:8]};
 
-		if (dio_index == 3) // Mac II ROM (256K)
+		// ROM file mapping:
+		// Index 0: boot0.rom (Mac II system ROM - 256K)
+		// Index 1: boot1.rom (NuBus video card ROM - 32K)
+		if (dio_index == 0) // boot0.rom - Mac II system ROM (256K)
 			dio_a <= {3'b000, dio_addr[17:0]}; // Map to 0 (Slot 0 offset 0)
+		else if (dio_index == 1) // boot1.rom - NuBus video ROM (passed directly to nubus_video)
+			dio_a <= dio_addr[20:0]; // Pass through to ioctl interface
+		else if (dio_index[1:0] == 2 || dio_index[1:0] == 3) // Floppy disk images at index 2,3
+			dio_a <= {dio_index[1:0], dio_addr[18:0]};
 		else
-			dio_a <= dio_index[1:0] ? {dio_index[1:0], dio_addr[18:0]} : {dio_index[6], dio_addr[17:0]};
+			dio_a <= {dio_index[6], dio_addr[17:0]};
 
 		ioctl_wait <= 1;
 	end
@@ -855,7 +860,7 @@ wire download_cycle = dio_download && dioBusControl;
 
 // Route Mac system signals through arbiter
 assign arb_mac_addr = download_cycle ? {4'b0001, dio_a[20:0] } :
-                      ~_romOE        ? {4'b0001, 2'b00, status_mod[0], memoryAddr[18:1]} : // Mac II ROM also at 0 offset if mapped there
+                      ~_romOE        ? {4'b0001, 2'b00, 1'b0, memoryAddr[18:1]} : // Mac II ROM at SDRAM offset
                                        {3'b000, (dskReadAckInt || dskReadAckExt), memoryAddr[21:1]};
 
 assign arb_mac_din  = download_cycle ? dio_data              : memoryDataOut;

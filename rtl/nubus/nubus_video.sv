@@ -182,7 +182,7 @@ module nubus_video (
     
     // ROM Download
     always @(posedge clk) begin
-        if (ioctl_wr && ioctl_download && (ioctl_index == 8'd4)) begin
+        if (ioctl_wr && ioctl_download && (ioctl_index == 8'd1)) begin
             if (ioctl_addr < 16384) begin
                 rom[{ioctl_addr[13:0], 1'b0}] <= ioctl_data[7:0];
                 rom[{ioctl_addr[13:0], 1'b1}] <= ioctl_data[15:8];
