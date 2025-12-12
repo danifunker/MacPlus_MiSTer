@@ -49,6 +49,14 @@ module nubus_video (
 
     // CLUT (Color Look-Up Table) - 256 entries x 24 bits
     reg [23:0] clut [0:255];
+    
+    // Initialize CLUT to grayscale
+    integer i;
+    initial begin
+        for (i = 0; i < 256; i = i + 1) begin
+            clut[i] = {i[7:0], i[7:0], i[7:0]};
+        end
+    end
 
     // ROM Buffer (32KB) - Toby ROM is 32KB
     reg [7:0] rom [0:32767];
@@ -141,6 +149,8 @@ module nubus_video (
     reg byte_sel;
 
     always @(*) begin
+        fetch_addr = 18'd0;
+        byte_sel = 1'b0;
         case (mode)
             2'b00: begin // 1bpp
                 // (v * 40) + (h >> 4)
@@ -191,8 +201,16 @@ module nubus_video (
     always @(*) begin
         case (mode)
             2'b00: // 1bpp
-                // FIXED: Removed redundant 8' width specifier and fixed bit indexing
-                pixel_idx = {7'b0, vram_byte[7 - h_cnt_d]};
+                case (h_cnt_d[2:0])
+                    3'd0: pixel_idx = {7'b0, vram_byte[7]};
+                    3'd1: pixel_idx = {7'b0, vram_byte[6]};
+                    3'd2: pixel_idx = {7'b0, vram_byte[5]};
+                    3'd3: pixel_idx = {7'b0, vram_byte[4]};
+                    3'd4: pixel_idx = {7'b0, vram_byte[3]};
+                    3'd5: pixel_idx = {7'b0, vram_byte[2]};
+                    3'd6: pixel_idx = {7'b0, vram_byte[1]};
+                    3'd7: pixel_idx = {7'b0, vram_byte[0]};
+                endcase
 
             2'b01: // 2bpp
                 case (h_cnt_d[1:0])
@@ -242,6 +260,7 @@ module nubus_video (
 
         if (reset) begin
             ack_n <= 1;
+            data_out <= 16'h0000;
             reg_control <= 0;
             reg_pixel_mask <= 8'hFF;
             reg_clut_addr_wr <= 0;
