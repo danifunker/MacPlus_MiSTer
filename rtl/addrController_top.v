@@ -200,7 +200,7 @@ module addrController_top(
 		.selectIWM(selectIWM),
 		.selectVIA(selectVIA),
 		.selectSEOverlay(selectSEOverlay),
-		selectNuBus(selectNuBus));
+		.selectNuBus(selectNuBus));
 
 	// video
 	videoTimer vt(
