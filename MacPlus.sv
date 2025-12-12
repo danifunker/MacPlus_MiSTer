@@ -179,7 +179,7 @@ module emu
 assign ADC_BUS  = 'Z;
 assign USER_OUT = '1;
 
-assign {DDRAM_CLK, DDRAM_BURSTCNT, DDRAM_ADDR, DDRAM_DIN, DDRAM_BE, DDRAM_RD, DDRAM_WE} = 0; 
+assign {DDRAM_CLK, DDRAM_BURSTCNT, DDRAM_ADDR, DDRAM_DIN, DDRAM_BE, DDRAM_RD, DDRAM_WE} = 0;
 assign {SD_SCK, SD_MOSI, SD_CS} = 'Z;
 
 assign LED_USER  = dio_download || (disk_act ^ |diskMotor);
@@ -206,7 +206,7 @@ video_freak video_freak
 	.SCALE(status[12:11])
 );
 
-`include "build_id.v" 
+`include "build_id.v"
 localparam CONF_STR = {
 	"MACPLUS;UART115200;",
 	"-;",
@@ -219,15 +219,16 @@ localparam CONF_STR = {
 	"O78,Aspect ratio,Original,Full Screen,[ARC1],[ARC2];",
 	"OBC,Scale,Normal,V-Integer,Narrower HV-Integer,Wider HV-Integer;",
 	"-;",
-	"O9,Model,Plus,SE;",
+	"O9A,Model,Plus,SE,Macintosh II;",
 	"O5,Speed,8MHz,16MHz;",
 	"ODE,CPU,68000,68010,68020;",
 	"O4,Memory,1MB,4MB;",
+	"S4,ROM,Load NuBus Video ROM;",
 	"-;",
 	//"OA,Serial,Off,On;",
 	//"-;",
 	"R0,Reset & Apply CPU+Memory;",
-	"v,0;", // [optional] config version 0-99. 
+	"v,0;", // [optional] config version 0-99.
 	        // If CONF_STR options are changed in incompatible way, then change version number too,
 			// so all options will get default values on first start.
 	"V,v",`BUILD_DATE
@@ -250,7 +251,7 @@ pll pll
 
 reg       status_mem;
 reg [1:0] status_cpu;
-reg       status_mod;
+reg [1:0] status_mod;
 reg       n_reset = 0;
 always @(posedge clk_sys) begin
 	reg [15:0] rst_cnt;
@@ -265,7 +266,7 @@ always @(posedge clk_sys) begin
 			rst_cnt    <= rst_cnt - 1'd1;
 			status_mem <= status[4];
 			status_cpu <= status[14:13];
-			status_mod <= status[9];
+			status_mod <= status[10:9];
 		end
 		else begin
 			n_reset <= 1;
@@ -320,7 +321,7 @@ hps_io #(.CONF_STR(CONF_STR), .VDNUM(SCSI_DEVS), .WIDE(1)) hps_io
 	.sd_buff_dout(sd_buff_dout),
 	.sd_buff_din(sd_buff_din),
 	.sd_buff_wr(sd_buff_wr),
-	
+
 	.img_mounted(img_mounted),
 	.img_size(img_size),
 
@@ -343,12 +344,19 @@ hps_io #(.CONF_STR(CONF_STR), .VDNUM(SCSI_DEVS), .WIDE(1)) hps_io
 assign CLK_VIDEO = clk_sys;
 assign CE_PIXEL  = 1;
 
-assign VGA_R  = {8{pixelOut}};
-assign VGA_G  = {8{pixelOut}};
-assign VGA_B  = {8{pixelOut}};
-assign VGA_DE = _vblank & _hblank;
-assign VGA_VS = vsync;
-assign VGA_HS = hsync;
+wire [15:0] nubusDataOut;
+wire nubusAck;
+wire [7:0] nubus_r, nubus_g, nubus_b;
+wire nubus_hs, nubus_vs, nubus_blank;
+
+wire video_from_nubus = (status_mod == 2'd2); // Mac II mode uses NuBus video
+
+assign VGA_R  = video_from_nubus ? nubus_r : {8{pixelOut}};
+assign VGA_G  = video_from_nubus ? nubus_g : {8{pixelOut}};
+assign VGA_B  = video_from_nubus ? nubus_b : {8{pixelOut}};
+assign VGA_DE = video_from_nubus ? !nubus_blank : (_vblank & _hblank);
+assign VGA_VS = video_from_nubus ? nubus_vs : vsync;
+assign VGA_HS = video_from_nubus ? nubus_hs : hsync;
 assign VGA_F1 = 0;
 assign VGA_SL = 0;
 
@@ -375,7 +383,8 @@ assign AUDIO_MIX = 0;
 localparam 	  configROMSize = 1'b1;  // 128K ROM
 
 wire [1:0] configRAMSize = status_mem?2'b11:2'b10; // 1MB/4MB
-			  
+wire selectNuBus;
+
 //
 // Serial Ports
 //
@@ -420,7 +429,7 @@ wire E_rising, E_falling;
 wire [2:0] _cpuIPL;
 wire [2:0] cpuFC;
 wire [7:0] cpuAddrHi;
-wire [23:0] cpuAddr;
+wire [31:0] cpuAddr;
 wire [15:0] cpuDataOut;
 
 // RAM/ROM
@@ -463,7 +472,7 @@ always @(posedge clk_sys) begin
 end
 
 assign      _cpuVPA = (cpuFC == 3'b111) ? 1'b0 : ~(!_cpuAS && cpuAddr[23:21] == 3'b111);
-assign      _cpuDTACK = ~(!_cpuAS && cpuAddr[23:21] != 3'b111) | (status_turbo & !turbo_dtack_en);
+assign      _cpuDTACK = selectNuBus ? nubusAck : (~(!_cpuAS && cpuAddr[23:21] != 3'b111) | (status_turbo & !turbo_dtack_en));
 
 wire        cpu_en_p      = status_turbo ? clk16_en_p : clk8_en_p;
 wire        cpu_en_n      = status_turbo ? clk16_en_n : clk8_en_n;
@@ -480,7 +489,7 @@ assign      _cpuVMA       = is68000 ? fx68_vma_n : tg68_vma_n;
 assign      cpuFC[0]      = is68000 ? fx68_fc0 : tg68_fc0;
 assign      cpuFC[1]      = is68000 ? fx68_fc1 : tg68_fc1;
 assign      cpuFC[2]      = is68000 ? fx68_fc2 : tg68_fc2;
-assign      cpuAddr[23:1] = is68000 ? fx68_a : tg68_a[23:1];
+assign      cpuAddr       = is68000 ? {8'h00, fx68_a, 1'b0} : tg68_a;
 assign      cpuDataOut    = is68000 ? fx68_dout : tg68_dout;
 
 wire        fx68_rw;
@@ -588,24 +597,24 @@ addrController_top ac0
 	.clk8_en_n(clk8_en_n),
 	.clk16_en_p(clk16_en_p),
 	.clk16_en_n(clk16_en_n),
-	.cpuAddr(cpuAddr), 
+	.cpuAddr(cpuAddr),
 	._cpuUDS(_cpuUDS),
 	._cpuLDS(_cpuLDS),
 	._cpuRW(_cpuRW),
 	._cpuAS(_cpuAS),
 	.turbo(status_turbo),
-	.configROMSize({status_mod,~status_mod}),
-	.configRAMSize(configRAMSize), 
+	.configROMSize((status_mod == 0) ? 2'b01 : 2'b10), // 0=Plus(128K), 1=SE(256K), 2=MacII(256K)
+	.configRAMSize(configRAMSize),
 	.memoryAddr(memoryAddr),
 	.memoryLatch(memoryLatch),
 	._memoryUDS(_memoryUDS),
 	._memoryLDS(_memoryLDS),
-	._romOE(_romOE), 
-	._ramOE(_ramOE), 
+	._romOE(_romOE),
+	._ramOE(_ramOE),
 	._ramWE(_ramWE),
-	.videoBusControl(videoBusControl),	
-	.dioBusControl(dioBusControl),	
-	.cpuBusControl(cpuBusControl),	
+	.videoBusControl(videoBusControl),
+	.dioBusControl(dioBusControl),
+	.cpuBusControl(cpuBusControl),
 	.selectSCSI(selectSCSI),
 	.selectSCC(selectSCC),
 	.selectIWM(selectIWM),
@@ -613,7 +622,8 @@ addrController_top ac0
 	.selectRAM(selectRAM),
 	.selectROM(selectROM),
 	.selectSEOverlay(selectSEOverlay),
-	.hsync(hsync), 
+	.selectNuBus(selectNuBus),
+	.hsync(hsync),
 	.vsync(vsync),
 	._hblank(_hblank),
 	._vblank(_vblank),
@@ -633,26 +643,51 @@ addrController_top ac0
 wire [1:0] diskEject;
 wire [1:0] diskMotor, diskAct;
 
+nubus_video nubus_card (
+	.clk(clk_sys),
+	.reset(!_cpuReset),
+	.addr(cpuAddr),
+	.data_in(cpuDataOut),
+	.data_out(nubusDataOut),
+	.uds_lds({!_cpuUDS, !_cpuLDS}),
+	.rw_n(_cpuRW),
+	.select(selectNuBus),
+	.ack_n(nubusAck),
+	.vga_r(nubus_r),
+	.vga_g(nubus_g),
+	.vga_b(nubus_b),
+	.vga_hs(nubus_hs),
+	.vga_vs(nubus_vs),
+	.vga_blank(nubus_blank),
+	.vga_clk(), // unused for now
+
+	.ioctl_wr(ioctl_write),
+	.ioctl_addr({4'd0, dio_a}),
+	.ioctl_data(dio_data),
+	.ioctl_download(dio_download),
+	.ioctl_index(dio_index)
+);
+
 dataController_top #(SCSI_DEVS) dc0
 (
-	.clk32(clk_sys), 
+	.clk32(clk_sys),
 	.clk8_en_p(clk8_en_p),
 	.clk8_en_n(clk8_en_n),
 	.E_rising(E_rising),
 	.E_falling(E_falling),
-	.machineType(status_mod),
+	.machineType(status_mod[0]),
 	._systemReset(n_reset),
-	._cpuReset(_cpuReset), 
+	._cpuReset(_cpuReset),
 	._cpuIPL(_cpuIPL),
-	._cpuUDS(_cpuUDS), 
-	._cpuLDS(_cpuLDS), 
-	._cpuRW(_cpuRW), 
+	._cpuUDS(_cpuUDS),
+	._cpuLDS(_cpuLDS),
+	._cpuRW(_cpuRW),
 	._cpuVMA(_cpuVMA),
-	.cpuDataIn(cpuDataOut),
-	.cpuDataOut(dataControllerDataOut), 	
+	.cpuDataIn(selectNuBus ? nubusDataOut : cpuDataOut),
+	.cpuDataOut(dataControllerDataOut),
 	.cpuAddrRegHi(cpuAddr[12:9]),
 	.cpuAddrRegMid(cpuAddr[6:4]),  // for SCSI
-	.cpuAddrRegLo(cpuAddr[2:1]),		
+	.cpuAddrRegLo(cpuAddr[2:1]),
 	.selectSCSI(selectSCSI),
 	.selectSCC(selectSCC),
 	.selectIWM(selectIWM),
@@ -665,7 +700,7 @@ dataController_top #(SCSI_DEVS) dc0
 	.memoryLatch(memoryLatch),
 
 	// peripherals
-	.ps2_key(ps2_key), 
+	.ps2_key(ps2_key),
 	.capslock(capslock),
 	.ps2_mouse(ps2_mouse),
 	// serial uart
@@ -679,7 +714,7 @@ dataController_top #(SCSI_DEVS) dc0
 
 	// video
 	._hblank(_hblank),
-	._vblank(_vblank), 
+	._vblank(_vblank),
 	.pixelOut(pixelOut),
 	.loadPixels(loadPixels),
 	.vid_alt(vid_alt),
@@ -759,7 +794,7 @@ always @(posedge clk_sys) begin
 		dsk_int_ds <= 0;
 		dsk_int_ss <= 0;
 	end
-end	
+end
 
 always @(posedge clk_sys) begin
 	reg old_down;
@@ -776,17 +811,22 @@ always @(posedge clk_sys) begin
 	end
 end
 
-// disk images are being stored right after os rom at word offset 0x80000 and 0x100000 
+// disk images are being stored right after os rom at word offset 0x80000 and 0x100000
 reg [20:0] dio_a;
 reg [15:0] dio_data;
 reg        dio_write;
 
 always @(posedge clk_sys) begin
 	reg old_cyc = 0;
-	
+
 	if(ioctl_write) begin
 		dio_data <= {ioctl_data[7:0], ioctl_data[15:8]};
-		dio_a <= dio_index[1:0] ? {dio_index[1:0], dio_addr[18:0]} : {dio_index[6], dio_addr[17:0]};
+
+		if (dio_index == 3) // Mac II ROM (256K)
+			dio_a <= {3'b000, dio_addr[17:0]}; // Map to 0 (Slot 0 offset 0)
+		else
+			dio_a <= dio_index[1:0] ? {dio_index[1:0], dio_addr[18:0]} : {dio_index[6], dio_addr[17:0]};
+
 		ioctl_wait <= 1;
 	end
 
@@ -801,8 +841,9 @@ wire download_cycle = dio_download && dioBusControl;
 
 ////////////////////////// SDRAM /////////////////////////////////
 
-wire [24:0] sdram_addr = download_cycle ? {4'b0001, dio_a[20:0] } : 
-                         ~_romOE        ? {4'b0001, 2'b00, status_mod, memoryAddr[18:1]} :
+// Status mod: 0=Plus, 1=SE, 2=MacII
+wire [24:0] sdram_addr = download_cycle ? {4'b0001, dio_a[20:0] } :
+                         ~_romOE        ? {4'b0001, 2'b00, status_mod[0], memoryAddr[18:1]} : // Mac II ROM also at 0 offset if mapped there
                                           {3'b000, (dskReadAckInt || dskReadAckExt), memoryAddr[21:1]};
 
 wire [15:0] sdram_din  = download_cycle ? dio_data              : memoryDataOut;
