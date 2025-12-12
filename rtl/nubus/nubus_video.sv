@@ -135,23 +135,34 @@ module nubus_video (
         end
     end
 
-    // Video fetch address - fix width issue
-    wire [15:0] v_shift5 = {v_cnt[9:0], 5'd0};
-    wire [13:0] v_shift3 = {v_cnt[9:0], 3'd0};
-    wire [17:0] v_times_40 = {2'd0, v_shift5} + {4'd0, v_shift3};
+    // Video fetch address calculation
+    // Calculate row offsets for each video mode
+    // Mode 0: 1bpp, 40 words/line = v * 40
+    // Mode 1: 2bpp, 80 words/line = v * 80  
+    // Mode 2: 4bpp, 160 words/line = v * 160
+    // Mode 3: 8bpp, 320 words/line = v * 320
     
-    wire [16:0] v_shift6 = {v_cnt[8:0], 6'd0};
-    wire [14:0] v_shift4 = {v_cnt[8:0], 4'd0};
-    wire [17:0] v_times_80 = {1'd0, v_shift6} + {3'd0, v_shift4};
+    // Use explicit widths to avoid Quartus 17.0.2 synthesis hangs
+    wire [17:0] v_times_40;
+    wire [17:0] v_times_80;
+    wire [17:0] v_times_160;
+    wire [17:0] v_times_320;
     
-    wire [17:0] v_times_160 = {v_cnt[7:0], 7'd0} + {2'd0, v_cnt[7:0], 5'd0};
-    wire [17:0] v_times_320 = {v_cnt[6:0], 8'd0} + {1'd0, v_cnt[6:0], 6'd0};
+    assign v_times_40  = {8'd0, v_cnt[9:0]} * 18'd40;
+    assign v_times_80  = {8'd0, v_cnt[9:0]} * 18'd80;
+    assign v_times_160 = {10'd0, v_cnt[7:0]} * 18'd160;
+    assign v_times_320 = {11'd0, v_cnt[6:0]} * 18'd320;
     
-    wire [17:0] fetch_addr = 
-        (mode == 2'b00) ? (v_times_40 + {7'd0, h_cnt[10:4]}) :
-        (mode == 2'b01) ? (v_times_80 + {8'd0, h_cnt[10:3]}) :
-        (mode == 2'b10) ? (v_times_160 + {9'd0, h_cnt[10:2]}) :
-                          (v_times_320 + {8'd0, h_cnt[10:1]});
+    wire [17:0] h_offset_0 = {11'd0, h_cnt[10:4]};
+    wire [17:0] h_offset_1 = {10'd0, h_cnt[10:3]};
+    wire [17:0] h_offset_2 = {9'd0, h_cnt[10:2]};
+    wire [17:0] h_offset_3 = {9'd0, h_cnt[10:1]};
+    
+    wire [17:0] fetch_addr;
+    assign fetch_addr = (mode == 2'b00) ? (v_times_40 + h_offset_0) :
+                        (mode == 2'b01) ? (v_times_80 + h_offset_1) :
+                        (mode == 2'b10) ? (v_times_160 + h_offset_2) :
+                                          (v_times_320 + h_offset_3);
 
     // Unified state machine
     reg [15:0] vram_cache;
