@@ -255,7 +255,7 @@ module nubus_video (
                             ack_n <= 0;
                         end else if (rw_n && addr[23:20] == 4'hF) begin
                             // ROM read
-                            if (addr[14:0] < 15'd32768) begin
+                            if (addr[14:0] < 15'd16384) begin
                                 data_out[15:8] <= rom[{addr[14:1], 1'b0}];
                                 data_out[7:0] <= rom[{addr[14:1], 1'b1}];
                             end else begin
