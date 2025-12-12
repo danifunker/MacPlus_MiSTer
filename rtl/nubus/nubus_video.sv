@@ -142,16 +142,17 @@ module nubus_video (
     // Mode 2: 4bpp, 160 words/line = v * 160
     // Mode 3: 8bpp, 320 words/line = v * 320
     
-    // Use explicit widths to avoid Quartus 17.0.2 synthesis hangs
+    // Use minimum required widths to avoid truncation warnings
+    // v_cnt max is 525, multiply by constants, truncate to 18-bit result
     wire [17:0] v_times_40;
     wire [17:0] v_times_80;
     wire [17:0] v_times_160;
     wire [17:0] v_times_320;
     
-    assign v_times_40  = {8'd0, v_cnt[9:0]} * 18'd40;
-    assign v_times_80  = {8'd0, v_cnt[9:0]} * 18'd80;
-    assign v_times_160 = {10'd0, v_cnt[7:0]} * 18'd160;
-    assign v_times_320 = {11'd0, v_cnt[6:0]} * 18'd320;
+    assign v_times_40  = v_cnt[9:0] * 10'd40;   // 10-bit * 10-bit = 20-bit, truncate to 18
+    assign v_times_80  = v_cnt[9:0] * 10'd80;   // 10-bit * 10-bit = 20-bit, truncate to 18
+    assign v_times_160 = v_cnt[7:0] * 8'd160;   // 8-bit * 8-bit = 16-bit, fits in 18
+    assign v_times_320 = v_cnt[6:0] * 7'd320;   // 7-bit * 9-bit = 16-bit, fits in 18
     
     wire [17:0] h_offset_0 = {11'd0, h_cnt[10:4]};
     wire [17:0] h_offset_1 = {10'd0, h_cnt[10:3]};
