@@ -1,5 +1,5 @@
 //============================================================================
-//  Macintosh Plus
+//  Little Big Mac 2
 //
 //  Port to MiSTer
 //  Copyright (C) 2017-2019 Sorgelig
@@ -19,7 +19,7 @@
 //  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 //============================================================================
 
-module emu
+module lbmactwo
 (
 	//Master input clock
 	input         CLK_50M,
@@ -208,7 +208,7 @@ video_freak video_freak
 
 `include "build_id.v"
 localparam CONF_STR = {
-	"MACPLUS;UART115200;",
+	"lbmactwo;UART115200;",
 	"-;",
 	"F1,DSK,Mount Pri Floppy;",
 	"F2,DSK,Mount Sec Floppy;",
