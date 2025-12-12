@@ -1,4 +1,4 @@
-module dataController_top(
+module dataController_top  #(parameter SCSI_DEVS = 2)(
 	// clocks:
 	input clk32,					// 32.5 MHz pixel clock
 	input clk8_en_p,
@@ -95,8 +95,6 @@ module dataController_top(
 	output           [15:0] sd_buff_din[SCSI_DEVS],
 	input                   sd_buff_wr
 );
-
-	parameter SCSI_DEVS = 2;
 
 	// add binary volume levels according to volume setting
 	assign audioOut =
