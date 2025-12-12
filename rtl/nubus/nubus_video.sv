@@ -46,6 +46,9 @@ module nubus_video (
     localparam V_TOTAL = 525;
     localparam V_SYNC_START = 480 + 3;
     localparam V_SYNC_END = 480 + 3 + 3;
+    
+    // VRAM base address in SDRAM (3MB offset to avoid Mac RAM/ROM/disk images)
+    localparam VRAM_BASE = 25'h300000;
 
     // CLUT - Keep on-chip
     reg [23:0] clut [0:255];
@@ -205,7 +208,7 @@ module nubus_video (
                         if (!rw_n && addr[23:19] == 5'b00000) begin
                             // CPU VRAM write
                             if (cpu_vram_addr < 153600) begin
-                                vram_addr <= {7'd0, cpu_vram_addr};
+                                vram_addr <= VRAM_BASE + {7'd0, cpu_vram_addr};
                                 vram_dout <= data_in;
                                 state <= S_CPU_WRITE;
                             end else begin
@@ -214,7 +217,7 @@ module nubus_video (
                         end else if (rw_n && addr[23:19] == 5'b00000) begin
                             // CPU VRAM read
                             if (cpu_vram_addr < 153600) begin
-                                vram_addr <= {7'd0, cpu_vram_addr};
+                                vram_addr <= VRAM_BASE + {7'd0, cpu_vram_addr};
                                 state <= S_CPU_READ;
                             end else begin
                                 data_out <= 16'd0;
@@ -270,7 +273,7 @@ module nubus_video (
                         ack_n <= 1;
                     end else if (fetch_addr != last_fetch_addr && fetch_addr < 153600) begin
                         // Video fetch when CPU not accessing
-                        vram_addr <= {7'd0, fetch_addr};
+                        vram_addr <= VRAM_BASE + {7'd0, fetch_addr};
                         state <= S_VIDEO_FETCH;
                     end
                 end
