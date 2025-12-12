@@ -191,20 +191,20 @@ module nubus_video (
     always @(*) begin
         case (mode)
             2'b00: // 1bpp
-                pixel_idx = {7'b0, vram_byte[3'd7 - h_cnt_d]};
+                pixel_idx = 8'({7'b0, vram_byte[~h_cnt_d]});
 
             2'b01: // 2bpp
                 case (h_cnt_d[1:0])
-                    2'b00: pixel_idx = {6'b0, vram_byte[7:6]};
-                    2'b01: pixel_idx = {6'b0, vram_byte[5:4]};
-                    2'b10: pixel_idx = {6'b0, vram_byte[3:2]};
-                    2'b11: pixel_idx = {6'b0, vram_byte[1:0]};
+                    2'b00: pixel_idx = 8'({6'b0, vram_byte[7:6]});
+                    2'b01: pixel_idx = 8'({6'b0, vram_byte[5:4]});
+                    2'b10: pixel_idx = 8'({6'b0, vram_byte[3:2]});
+                    2'b11: pixel_idx = 8'({6'b0, vram_byte[1:0]});
                 endcase
 
             2'b10: // 4bpp
                 case (h_cnt_d[0])
-                    1'b0: pixel_idx = {4'b0, vram_byte[7:4]};
-                    1'b1: pixel_idx = {4'b0, vram_byte[3:0]};
+                    1'b0: pixel_idx = 8'({4'b0, vram_byte[7:4]});
+                    1'b1: pixel_idx = 8'({4'b0, vram_byte[3:0]});
                 endcase
 
             2'b11: // 8bpp
@@ -298,7 +298,7 @@ module nubus_video (
                     // ROM
                     else if (addr[23:20] == 4'hF) begin
                         data_out[15:8] <= rom[addr[14:0]];
-                        data_out[7:0] <= rom[addr[14:0]];
+                        data_out[7:0] <= rom[addr[14:0] | 1];
                     end
                 end
             end
