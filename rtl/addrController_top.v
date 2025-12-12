@@ -39,6 +39,7 @@ module addrController_top(
 	output selectRAM,
 	output selectROM,
 	output selectSEOverlay,
+	output selectNuBus,
 	
 	// video:
 	output hsync,
