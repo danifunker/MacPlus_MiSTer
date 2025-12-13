@@ -970,7 +970,7 @@ module TG68K_ALU #(
                 if (signedOP == 1'b1 && OP2out[15] == 1'b1) faktorB = 32'hFFFFFFFF;
                 else                                        faktorB = 32'h00000000;
 
-                result_mulu[63:0] = (faktorA[15:0] & reg_QA[15:0]) * (faktorB[15:0] & OP2out[15:0]);
+                result_mulu[63:0] = $signed({faktorA[15:0], reg_QA[15:0]}) * $signed({faktorB[15:0], OP2out[15:0]});
             end else begin
                 if (exe_opcode[15] == 1'b1) begin // 16 Bit
                      if (signedOP == 1'b1 && reg_QA[15] == 1'b1) faktorA = 32'hFFFFFFFF;
@@ -979,7 +979,7 @@ module TG68K_ALU #(
                      if (signedOP == 1'b1 && OP2out[15] == 1'b1) faktorB = 32'hFFFFFFFF;
                      else                                        faktorB = 32'h00000000;
 
-                     result_mulu[127:0] = (faktorA[31:16] & faktorA[31:0] & reg_QA[15:0]) * (faktorB[31:16] & faktorB[31:0] & OP2out[15:0]);
+                     result_mulu[127:0] = $signed({faktorA[31:16], faktorA[31:0], reg_QA[15:0]}) * $signed({faktorB[31:16], faktorB[31:0], OP2out[15:0]});
                 end else begin
                     faktorA[15:0] = reg_QA[31:16];
                     faktorB[15:0] = OP2out[31:16];
@@ -989,7 +989,7 @@ module TG68K_ALU #(
                     if (signedOP == 1'b1 && OP2out[31] == 1'b1) faktorB[31:16] = 16'hFFFF;
                     else                                        faktorB[31:16] = 16'h0000;
 
-                    result_mulu = {faktorA[31:16], faktorA[31:0], reg_QA[15:0]} * {faktorB[31:16], faktorB[31:0], OP2out[15:0]};
+                    result_mulu = $signed({faktorA[31:16], faktorA[31:0], reg_QA[15:0]}) * $signed({faktorB[31:16], faktorB[31:0], OP2out[15:0]});
                 end
             end
         end else begin // MUL_Hardware == 0 (Serial Multiplier)

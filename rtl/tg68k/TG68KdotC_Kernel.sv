@@ -318,7 +318,7 @@ module TG68KdotC_Kernel #(
     assign clkena_lw = (clkena_in == 1'b1 && memmaskmux[3] == 1'b1) ? 1'b1 : 1'b0;
     assign clr_berr = (setopcode == 1'b1 && trap_berr == 1'b1) ? 1'b1 : 1'b0;
 
-    always_ff @(posedge clk) begin
+    always_ff @(posedge clk or negedge nReset) begin
         if (nReset == 1'b0) begin
             syncReset <= 4'b0000;
             Reset <= 1'b1;
