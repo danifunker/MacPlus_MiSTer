@@ -1666,7 +1666,7 @@ module TG68KdotC_Kernel #(
                 setnextpass = 1'b1;
             end
             `ld_AnXn1: begin // d(An,Xn)=>, --d(PC,Xn)=>
-                if (brief[8] == 1'b0 || extAddr_Mode == 0 || (cpu[1] == 1'b0 && extAddr_Mode == 2)) begin
+                if (brief[8] == 1'b0 || extAddr_Mode == 0 || (CPU[1] == 1'b0 && extAddr_Mode == 2)) begin
                     setdisp = 1'b1; //byte
                     setdispbyte = 1'b1;
                     setstate = 2'b01;
@@ -1674,7 +1674,7 @@ module TG68KdotC_Kernel #(
                     next_micro_state = `ld_AnXn2;
                 end else begin
                     if (brief[7] == 1'b1) begin //suppress Base
-                        set_suppress_base = 1'b1;
+                        set_Suppress_Base = 1'b1;
                     end else if (exec[`dispouter] == 1'b1) begin
                         set[`dispouter] = 1'b1;
                     end
@@ -1726,7 +1726,7 @@ module TG68KdotC_Kernel #(
                 next_micro_state = `ld_229_3;
             end
             `ld_229_3: begin // (bd,An,Xn)=>, --(bd,PC,Xn)=>
-                set_suppress_base = 1'b1;
+                set_Suppress_Base = 1'b1;
                 set[`dispouter] = 1'b1;
                 if (brief[1] == 1'b0) begin //NULL Outer Displacement
                     setstate = 2'b01;
@@ -1757,7 +1757,7 @@ module TG68KdotC_Kernel #(
                 next_micro_state = `nop;
             end
             `st_AnXn1: begin // =>d(An,Xn)
-                if (brief[8] == 1'b0 || extAddr_Mode == 0 || (cpu[1] == 1'b0 && extAddr_Mode == 2)) begin
+                if (brief[8] == 1'b0 || extAddr_Mode == 0 || (CPU[1] == 1'b0 && extAddr_Mode == 2)) begin
                     setdisp = 1'b1; //byte
                     setdispbyte = 1'b1;
                     setstate = 2'b01;
@@ -1765,7 +1765,7 @@ module TG68KdotC_Kernel #(
                     next_micro_state = `st_AnXn2;
                 end else begin
                     if (brief[7] == 1'b1) begin //suppress Base
-                        set_suppress_base = 1'b1;
+                        set_Suppress_Base = 1'b1;
                         //						ELSIF exec(dispouter)='1' THEN
                         //							set(dispouter) <= '1';
                     end
@@ -1819,7 +1819,7 @@ module TG68KdotC_Kernel #(
             end
             `st_229_3: begin // (bd,An,Xn)=>, --(bd,PC,Xn)=>
                 set[`hold_dwr] = 1'b1;
-                set_suppress_base = 1'b1;
+                set_Suppress_Base = 1'b1;
                 set[`dispouter] = 1'b1;
                 if (brief[1] == 1'b0) begin //NULL Outer Displacement
                     setstate = 2'b01;
@@ -2020,7 +2020,7 @@ module TG68KdotC_Kernel #(
                     setstate =2'b01;
                     if (opcode[5:3] == 3'b100) begin
                         set[`mem_addsub] = 1'b1;
-                        if (cpu[1] == 1'b1) begin
+                        if (CPU[1] == 1'b1) begin
                             set[`Regwrena] = 1'b1; //tg
                         end
                     end
@@ -2269,7 +2269,7 @@ module TG68KdotC_Kernel #(
                 set[`briefext] = 1'b1;
                 set_writePCbig = 1'b1;
                 if ((brief[11:0]==12'h000 || brief[11:0]==12'h001 || brief[11:0]==12'h800 || brief[11:0]==12'h801) ||
-                    (cpu[1] == 1'b1 && (brief[11:0]==12'h002 || brief[11:0]==12'h802 || brief[11:0]==12'h803 || brief[11:0]==12'h804))) begin
+                    (CPU[1] == 1'b1 && (brief[11:0]==12'h002 || brief[11:0]==12'h802 || brief[11:0]==12'h803 || brief[11:0]==12'h804))) begin
                     if (opcode[0] == 1'b0) begin
                     set[`Regwrena] = 1'b1;
                 end
@@ -2405,7 +2405,7 @@ module TG68KdotC_Kernel #(
                 end
             end
             `div_end1: begin // divu
-                if (z_error == 1'b0 && set_V_Flag == 1'b0) begin
+                if (Z_error == 1'b0 && set_V_Flag == 1'b0) begin
                     set[`Regwrena] = 1'b1;
                 end
                 if (opcode[15] == 1'b0 && (DIV_Mode == 1 || DIV_Mode == 2)) begin
