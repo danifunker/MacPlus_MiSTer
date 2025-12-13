@@ -85,14 +85,6 @@ module TG68KdotC_Kernel #(
             regfile[init_i] = 32'h00000000;
         end
     end 
-    
-    // Initialize regfile to zeros
-    integer init_i;
-    initial begin
-        for (init_i = 0; init_i < 16; init_i = init_i + 1) begin
-            regfile[init_i] = 32'h00000000;
-        end
-    end 
     reg  [3:0]  RDindex_A_bits; // Pointer bits
     reg  [3:0]  RDindex_B_bits;
     integer     RDindex_A;      // Integer index
@@ -307,7 +299,7 @@ module TG68KdotC_Kernel #(
         .set_stop(set_stop),
         .Z_error(Z_error),
         .rot_bits(rot_bits),
-        .exec[`exec],
+        .exec(exec),
         .OP1out(OP1out),
         .OP2out(OP2out),
         .reg_QA(reg_QA),
@@ -414,7 +406,7 @@ module TG68KdotC_Kernel #(
                 last_data_read <= data_read;
                 if (state[1] == 1'b0 && memmask[1] === 1'b0)
                     last_data_read[31:16] <= last_opc_read;
-                else if (state[1] == 1'b0 || memread[1] ==== 1'b1)
+                else if (state[1] == 1'b0 || memread[1] == 1'b1)
                     last_data_read[31:16] <= {16{data_in[15]}};
             end
             last_data_in <= {last_data_in[15:0], data_in};
@@ -445,12 +437,12 @@ module TG68KdotC_Kernel #(
 
         if (memmaskmux[1] === 1'b0)
             data_write = data_write_mux[47:32];
-        else if (memmaskmux[3] ==== 1'b0)
+        else if (memmaskmux[3] == 1'b0)
             data_write = data_write_mux[31:16];
         else begin
             if (memmaskmux[5:4] === 2'b10)
                 data_write = {data_write_mux[7:0], data_write_mux[7:0]};
-            else if (memmaskmux[5:4] ==== 2'b01)
+            else if (memmaskmux[5:4] == 2'b01)
                 data_write = {data_write_mux[15:8], data_write_mux[15:8]};
             else
                 data_write = data_write_mux[15:0];
@@ -588,7 +580,7 @@ module TG68KdotC_Kernel #(
             OP1out = 32'b0;
         else if (exec[`ea_data_OP1] && store_in_tmp)
             OP1out = ea_data;
-        else if (exec[`movem_action] || memmaskmux[3] ==== 1'b0 || exec[`OP1addr])
+        else if (exec[`movem_action] || memmaskmux[3] == 1'b0 || exec[`OP1addr])
             OP1out = addr;
     end
 
@@ -615,7 +607,7 @@ module TG68KdotC_Kernel #(
                 OP2out[3] = 1'b0;
             OP2out[15:4] = 12'b0;
             OP2out[31:16] = 16'b0;
-        end else if (exe_datatype ==== 2'b10 && !exec[`opcEXT]) begin
+        end else if (exe_datatype == 2'b10 && !exec[`opcEXT]) begin
             OP2out[31:16] = reg_QB[31:16];
         end
 
@@ -663,7 +655,7 @@ module TG68KdotC_Kernel #(
                 ea_data <= data_read;
             else if (exec[`get_2ndOPC])
                 ea_data <= addr;
-            else if (exec[`store_ea_data] || (direct_data && state ==== 2'b00))
+            else if (exec[`store_ea_data] || (direct_data && state == 2'b00))
                 ea_data <= last_data_read;
             
             // data_write_tmp logic
@@ -671,11 +663,11 @@ module TG68KdotC_Kernel #(
                 data_write_tmp <= TG68_PC;
             else if (exec[`writePC_add])
                 data_write_tmp <= TG68_PC_add;
-            else if (micro_state ==== `trap00) begin
+            else if (micro_state == `trap00) begin
                 data_write_tmp <= exe_pc;
                 useStackframe2 <= 1'b1;
                 writePCnext <= trap_trap | trap_trapv | exec[`trap_chk] | Z_error;
-            end else if (micro_state ==== `trap0) begin
+            end else if (micro_state == `trap0) begin
                 if (useStackframe2) begin
                      data_write_tmp[15:0] <= {4'b0010, trap_vector[11:0]};
                      data_write_tmp[31:16] <= data_write_tmp[31:16]; // Maintain high part? VHDL doesn't specify
@@ -692,7 +684,7 @@ module TG68KdotC_Kernel #(
                 data_write_tmp <= addr;
             else if (execOPC)
                 data_write_tmp <= ALUout;
-            else if (exec_DIRECT && state ==== 2'b10) begin
+            else if (exec_DIRECT && state == 2'b10) begin
                 data_write_tmp <= data_read;
                 if (exec[`movepl]) data_write_tmp[31:8] <= data_write_tmp[23:0];
             end else if (exec[`movepl])
@@ -762,11 +754,11 @@ module TG68KdotC_Kernel #(
                 memaddr_delta_rega <= tmp_TG68_PC;
             else if (exec[`direct_delta])
                 memaddr_delta_rega <= data_read;
-            else if (exec[`ea_to_pc] && setstate ==== 2'b00)
+            else if (exec[`ea_to_pc] && setstate == 2'b00)
                 memaddr_delta_rega <= addr;
             else if (set[`addrlong])
                 memaddr_delta_rega <= last_data_read;
-            else if (setstate ==== 2'b00)
+            else if (setstate == 2'b00)
                 memaddr_delta_rega <= TG68_PC_add;
             else if (exec[`dispouter]) begin
                 memaddr_delta_rega <= ea_data;
@@ -809,7 +801,7 @@ module TG68KdotC_Kernel #(
         end else if (set[`presub]) begin
             if (set[`longaktion])
                 memaddr_a[4:0] = 5'b11100;
-            else if (datatype == 2'b00 && set[`use_SP] ==== 1'b0)
+            else if (datatype == 2'b00 && set[`use_SP] == 1'b0)
                 memaddr_a[4:0] = 5'b11111;
             else
                 memaddr_a[4:0] = 5'b11110;
@@ -844,7 +836,7 @@ module TG68KdotC_Kernel #(
             end
             if ((!use_VBR_Stackframe && (trap_trap | trap_trapv | exec[`trap_chk] | Z_error)) || writePCnext)
                 PC_datab[1] = 1'b1;
-        end else if (state ==== 2'b00) begin
+        end else if (state == 2'b00) begin
             PC_datab[1] = 1'b1;
         end
 
@@ -910,7 +902,7 @@ module TG68KdotC_Kernel #(
                     TG68_PC <= data_read;
                 else if (exec[`ea_to_pc])
                     TG68_PC <= addr;
-                else if ((state ==== 2'b00 || TG68_PC_brw) && !stop)
+                else if ((state == 2'b00 || TG68_PC_brw) && !stop)
                     TG68_PC <= TG68_PC_add;
             end
             
@@ -959,7 +951,7 @@ module TG68KdotC_Kernel #(
                     trap_trace     <= 1'b0;
                     TG68_PC_word   <= 1'b0;
                     trap_berr      <= 1'b0;
-                end else if (opcode[7:0] == 8'h00 || opcode[7:0] ==== 8'hFF || data_is_source) begin
+                end else if (opcode[7:0] == 8'h00 || opcode[7:0] == 8'hFF || data_is_source) begin
                     TG68_PC_word <= 1'b1;
                 end
                 
@@ -977,7 +969,7 @@ module TG68KdotC_Kernel #(
                 
                 if (state === 2'b11)
                     exec_write_back <= 1'b0;
-                else if (setstate ==== 2'b10 && !setaddrvalue && write_back)
+                else if (setstate == 2'b10 && !setaddrvalue && write_back)
                     exec_write_back <= 1'b1;
                     
                 if ((state == 2'b10 && !addrvalue && write_back && setstate !== 2'b10) || 
@@ -1004,7 +996,7 @@ module TG68KdotC_Kernel #(
                         memmask <= 6'b100001;
                         wbmemmask <= 6'b100001;
                         oddout <= 1'b0;
-                    end else if (set_datatype ==== 2'b00 && setstate[1]) begin
+                    end else if (set_datatype == 2'b00 && setstate[1]) begin
                         memmask <= 6'b101111;
                         wbmemmask <= 6'b101111;
                         if (set[`mem_byte]) oddout <= 1'b0; else oddout <= 1'b1;
@@ -1383,7 +1375,7 @@ module TG68KdotC_Kernel #(
                         next_micro_state = `movep1;
                     end
                     if (setexecOPC) dest_hbits = 1'b1;
-                end else if (opcode[8] || opcode[11:9] ==== 3'b100) begin // Bits
+                end else if (opcode[8] || opcode[11:9] == 3'b100) begin // Bits
                     // Checks for illegal modes omitted for brevity, assuming legal or caught by default
                     if (opcode[5:3] !== 3'b001 && 
                        (opcode[8:3] != 6'b000111 || opcode[2] == 1'b0) &&
@@ -1410,13 +1402,13 @@ module TG68KdotC_Kernel #(
                     end else begin
                         trap_illegal = 1'b1; trapmake = 1'b1;
                     end
-                end else if (opcode[8:6] ==== 3'b011) begin // CAS/CAS2/CMP2/CHK2
+                end else if (opcode[8:6] == 3'b011) begin // CAS/CAS2/CMP2/CHK2
                     if (CPU[1]) begin
                          // Simplified logic for brevity - assuming implementation details
                          if (opcode[11]) begin // CAS/CAS2
                              // ... details ...
                              if (opcode[10:9] === 2'b01) datatype = 2'b00;
-                             else if (opcode[10:9] ==== 2'b10) datatype = 2'b01;
+                             else if (opcode[10:9] == 2'b10) datatype = 2'b01;
                              else datatype = 2'b10;
 
                              if (opcode[10] && opcode[5:0] === 6'b111100) begin // CAS2
@@ -1442,14 +1434,14 @@ module TG68KdotC_Kernel #(
                     end else begin
                         trap_illegal = 1'b1; trapmake = 1'b1;
                     end
-                end else if (opcode[11:9] ==== 3'b111) begin // MOVES
+                end else if (opcode[11:9] == 3'b111) begin // MOVES
                      trap_illegal = 1'b1; trapmake = 1'b1; // Placeholder
                 end else begin // andi/ori etc immediate
                      if (opcode[11:9] === 3'b000) set_exec[`opcOR] = 1'b1;
-                     else if (opcode[11:9] ==== 3'b001) set_exec[`opcAND] = 1'b1;
-                     else if (opcode[11:9] == 3'b010 || opcode[11:9] ==== 3'b011) set_exec[`opcADD] = 1'b1;
-                     else if (opcode[11:9] ==== 3'b101) set_exec[`opcEOR] = 1'b1;
-                     else if (opcode[11:9] ==== 3'b110) set_exec[`opcCMP] = 1'b1;
+                     else if (opcode[11:9] == 3'b001) set_exec[`opcAND] = 1'b1;
+                     else if (opcode[11:9] == 3'b010 || opcode[11:9] == 3'b011) set_exec[`opcADD] = 1'b1;
+                     else if (opcode[11:9] == 3'b101) set_exec[`opcEOR] = 1'b1;
+                     else if (opcode[11:9] == 3'b110) set_exec[`opcCMP] = 1'b1;
                      
                      if (set_exec[`opcOR] | set_exec[`opcAND] | set_exec[`opcADD] | set_exec[`opcEOR] | set_exec[`opcCMP]) begin
                          if (opcode[7] == 1'b0 && opcode[5:0] === 6'b111100 && (set_exec[`opcAND] | set_exec[`opcOR] | set_exec[`opcEOR])) begin // SR
@@ -1565,7 +1557,7 @@ module TG68KdotC_Kernel #(
                 if (opcode[7:6] === 2'b11) begin // DBCC / SCC
                     if (opcode[5:3] === 3'b001) begin // DBCC
                         if (decodeOPC) begin next_micro_state = `dbcc1; set[`OP2out_one] = 1'b1; data_is_source = 1'b1; end
-                    end else if (opcode[5:3] != 3'b111 || opcode[2:1] ==== 2'b00) begin // SCC
+                    end else if (opcode[5:3] != 3'b111 || opcode[2:1] == 2'b00) begin // SCC
                          datatype = 2'b00; ea_build_now = 1'b1; write_back = 1'b1; set_exec[`opcScc] = 1'b1;
                          if (opcode[5:4] === 2'b00) set_exec[`Regwrena] = 1'b1;
                     end
@@ -1586,11 +1578,11 @@ module TG68KdotC_Kernel #(
                     if (opcode[11:8] === 4'b0001) begin // BSR
                         set[`presub] = 1'b1; setstackaddr = 1'b1;
                         if (opcode[7:0] === 8'hFF) begin next_micro_state = `bsr2; set[`longaktion] = 1'b1; end
-                        else if (opcode[7:0] ==== 8'h00) next_micro_state = `bsr2;
+                        else if (opcode[7:0] == 8'h00) next_micro_state = `bsr2;
                         else begin next_micro_state = `bsr1; setstate = 2'b11; writePC = 1'b1; end
                     end else begin // BRA
                         if (opcode[7:0] === 8'hFF) begin next_micro_state = `bra1; set[`longaktion] = 1'b1; end
-                        else if (opcode[7:0] ==== 8'h00) next_micro_state = `bra1;
+                        else if (opcode[7:0] == 8'h00) next_micro_state = `bra1;
                         else begin setstate = 2'b01; next_micro_state = `bra1; end
                     end
                 end
@@ -1673,21 +1665,21 @@ module TG68KdotC_Kernel #(
                 setnextpass = 1'b1;
             end
             `ld_AnXn1: begin // d(An,Xn)=>, --d(PC,Xn)=>
-                if (brief[8]=1'b0 || extAddr_Mode == 0 || (cpu[1]=1'b0 && extAddr_Mode === 2)) begin
+                if (brief[8]==1'b0 || extAddr_Mode == 0 || (cpu[1]==1'b0 && extAddr_Mode === 2)) begin
                 setdisp = 1'b1; //byte
                 setdispbyte = 1'b1;
                 setstate = 2'b01;
                 set[`briefext] = 1'b1;
                 next_micro_state = `ld_AnXn2;
                 end else begin
-                if (brief[7]='1') begin //suppress Base
+                if (brief[7]=='1') begin //suppress Base
                 set_suppress_base = 1'b1;
                 end else if (exec[`dispouter]=1'b1) begin
                 set[`dispouter] = 1'b1;
                 end
                 if (brief[5]==1'b0) begin //NULL Base Displacement
                 setstate = 2'b01;
-                ELSE //WORD Base Displacement
+                end else begin //WORD Base Displacement
                 if (brief[4]==1'b1) begin
                 set[`longaktion] = 1'b1; //LONG Base Displacement
                 end
@@ -1705,7 +1697,7 @@ module TG68KdotC_Kernel #(
                 if (brief[5]==1'b1) begin //Base Displacement
                 setdisp = 1'b1; //add last_data_read
                 end
-                if (brief[6]=1'b0 && brief[2]==1'b0) begin //Preindex or Index
+                if (brief[6]==1'b0 && brief[2]==1'b0) begin //Preindex or Index
                 set[`briefext] = 1'b1;
                 setstate = 2'b01;
                 if (brief[1:0]==2'b00) begin
@@ -1737,7 +1729,7 @@ module TG68KdotC_Kernel #(
                 set[`dispouter] = 1'b1;
                 if (brief[1]==1'b0) begin //NULL Outer Displacement
                 setstate = 2'b01;
-                ELSE //WORD Outer Displacement
+                end else begin //WORD Outer Displacement
                 if (brief[0]==1'b1) begin
                 set[`longaktion] = 1'b1; //LONG Outer Displacement
                 end
@@ -1748,7 +1740,7 @@ module TG68KdotC_Kernel #(
                 if (brief[1]==1'b1) begin // Outer Displacement
                 setdisp = 1'b1; //add last_data_read
                 end
-                if (brief[6]=1'b0 && brief[2]==1'b1) begin //Postindex
+                if (brief[6]==1'b0 && brief[2]==1'b1) begin //Postindex
                 set[`briefext] = 1'b1;
                 setstate = 2'b01;
                 next_micro_state = `ld_AnXn2;
@@ -1764,21 +1756,21 @@ module TG68KdotC_Kernel #(
                 next_micro_state = `nop;
             end
             `st_AnXn1: begin // =>d(An,Xn)
-                if (brief[8]=1'b0 || extAddr_Mode == 0 || (cpu[1]=1'b0 && extAddr_Mode === 2)) begin
+                if (brief[8]==1'b0 || extAddr_Mode == 0 || (cpu[1]==1'b0 && extAddr_Mode === 2)) begin
                 setdisp = 1'b1; //byte
                 setdispbyte = 1'b1;
                 setstate = 2'b01;
                 set[`briefext] = 1'b1;
                 next_micro_state = `st_AnXn2;
                 end else begin
-                if (brief[7]='1') begin //suppress Base
+                if (brief[7]=='1') begin //suppress Base
                 set_suppress_base = 1'b1;
                 //						ELSIF exec[`dispouter]='1' THEN
                 //							set(dispouter) <= '1';
                 end
                 if (brief[5]==1'b0) begin //NULL Base Displacement
                 setstate = 2'b01;
-                ELSE //WORD Base Displacement
+                end else begin //WORD Base Displacement
                 if (brief[4]==1'b1) begin
                 set[`longaktion] = 1'b1; //LONG Base Displacement
                 end
@@ -1797,7 +1789,7 @@ module TG68KdotC_Kernel #(
                 if (brief[5]==1'b1) begin //Base Displacement
                 setdisp = 1'b1; //add last_data_read
                 end
-                if (brief[6]=1'b0 && brief[2]==1'b0) begin //Preindex or Index
+                if (brief[6]==1'b0 && brief[2]==1'b0) begin //Preindex or Index
                 set[`briefext] = 1'b1;
                 setstate = 2'b01;
                 if (brief[1:0]==2'b00) begin
@@ -1830,7 +1822,7 @@ module TG68KdotC_Kernel #(
                 set[`dispouter] = 1'b1;
                 if (brief[1]==1'b0) begin //NULL Outer Displacement
                 setstate = 2'b01;
-                ELSE //WORD Outer Displacement
+                end else begin //WORD Outer Displacement
                 if (brief[0]==1'b1) begin
                 set[`longaktion] = 1'b1; //LONG Outer Displacement
                 end
@@ -1842,7 +1834,7 @@ module TG68KdotC_Kernel #(
                 if (brief[1]==1'b1) begin // Outer Displacement
                 setdisp = 1'b1; //add last_data_read
                 end
-                if (brief[6]=1'b0 && brief[2]==1'b1) begin //Postindex
+                if (brief[6]==1'b0 && brief[2]==1'b1) begin //Postindex
                 set[`briefext] = 1'b1;
                 setstate = 2'b01;
                 next_micro_state = `st_AnXn2;
@@ -1931,7 +1923,7 @@ module TG68KdotC_Kernel #(
                 next_micro_state = `chk24;
             end
             `chk24: begin
-                if (Flags[0]='1') begin
+                if (Flags[0]=='1') begin
                 trapmake = 1'b1;
                 end
             end
@@ -1941,7 +1933,7 @@ module TG68KdotC_Kernel #(
             end
             `cas2: begin
                 source_2ndMbits = 1'b1;
-                if (Flags[2]='1') begin
+                if (Flags[2]=='1') begin
                 setstate =2'b11;
                 set[`write_reg] = 1'b1;
                 set[`restore_ADDR] = 1'b1;
@@ -1974,7 +1966,7 @@ module TG68KdotC_Kernel #(
                 next_micro_state = `cas24;
             end
             `cas24: begin
-                if (Flags[2]='1') begin
+                if (Flags[2]=='1') begin
                 set[`alu_setFlags] = 1'b1;
                 end
                 setstate =2'b01;
@@ -1991,7 +1983,7 @@ module TG68KdotC_Kernel #(
                 next_micro_state = `cas26;
             end
             `cas26: begin
-                if (Flags[2]='1') begin // write Update 1 to Destination 1
+                if (Flags[2]=='1') begin // write Update 1 to Destination 1
                 source_2ndMbits = 1'b1;
                 set[`write_reg] = 1'b1;
                 dest_2ndHbits = 1'b1;
@@ -1999,7 +1991,7 @@ module TG68KdotC_Kernel #(
                 setstate = 2'b11;
                 set[`get_ea_now] = 1'b1;
                 next_micro_state = `cas27;
-                ELSE // write Destination 2 to Compare 2 first
+                end else begin // write Destination 2 to Compare 2 first
                 set[`hold_dwr] = 1'b1;
                 set[`hold_OP2] = 1'b1;
                 dest_LDRLbits = 1'b1;
@@ -2073,7 +2065,7 @@ module TG68KdotC_Kernel #(
                 set_direct_data = 1'b1;
                 if (opcode[7:6] == 2'b01) begin //pack
                 datatype = 2'b00; //Byte
-                ELSE //unpk
+                end else begin //unpk
                 datatype = 2'b01; //Word
                 end
                 set[`presub] = 1'b1;
@@ -2248,7 +2240,7 @@ module TG68KdotC_Kernel #(
             end
             `rte4: begin // RTE
                 // check for stack frame format #2
-                if last_data_in[15:12]=4'b0010 then
+                if last_data_in[15:12]==4'b0010 then
                 // read another 32 bits in this case
                 setstate = 2'b10; // read
                 datatype = 2'b10; // long word
@@ -2274,8 +2266,8 @@ module TG68KdotC_Kernel #(
             `movec1: begin // MOVEC
                 set[`briefext] = 1'b1;
                 set_writePCbig = 1'b1;
-                IF (brief[11:0]=12'h000 OR brief[11:0]=12'h001 OR brief[11:0]=12'h800 OR brief[11:0]=12'h801) OR
-                (cpu[1]='1' AND (brief[11:0]=12'h002 OR brief[11:0]=12'h802 OR brief[11:0]=12'h803 OR brief[11:0]=12'h804)) THEN
+                IF (brief[11:0]==12'h000 OR brief[11:0]==12'h001 OR brief[11:0]==12'h800 OR brief[11:0]==12'h801) OR
+                (cpu[1]=='1' AND (brief[11:0]==12'h002 OR brief[11:0]==12'h802 OR brief[11:0]==12'h803 OR brief[11:0]==12'h804)) THEN
                 if (opcode[0]==1'b0) begin
                 set[`Regwrena] = 1'b1;
                 end
@@ -2341,7 +2333,7 @@ module TG68KdotC_Kernel #(
                 datatype = 2'b10; //Long
             end
             `mul1: begin // mulu
-                if (opcode[15]=1'b1 || MUL_Mode === 0) begin
+                if (opcode[15]==1'b1 || MUL_Mode === 0) begin
                 set_rot_cnt = 6'b001110;
                 end else begin
                 set_rot_cnt = 6'b011110;
@@ -2363,7 +2355,7 @@ module TG68KdotC_Kernel #(
                 end
                 datatype = 2'b10;
                 set[`opcMULU] = 1'b1;
-                if (opcode[15]=1'b0 && (MUL_Mode == 1 || MUL_Mode === 2)) begin
+                if (opcode[15]==1'b0 && (MUL_Mode == 1 || MUL_Mode === 2)) begin
                 dest_2ndHbits = 1'b1;
                 set[`write_lowlong] = 1'b1;
                 if (sndOPC[10]==1'b1) begin
@@ -2385,7 +2377,7 @@ module TG68KdotC_Kernel #(
                 next_micro_state = `div2;
             end
             `div2: begin // divu
-                if ((OP2out[31:16]=x4'b0000 || opcode[15]=1'b1 || DIV_Mode === 0) && OP2out[15:0]=x4'b0000) begin //div zero
+                if ((OP2out[31:16]==x4'b0000 || opcode[15]==1'b1 || DIV_Mode === 0) && OP2out[15:0]==x4'b0000) begin //div zero
                 set_Z_error = 1'b1;
                 end else begin
                 next_micro_state = `div3;
@@ -2394,7 +2386,7 @@ module TG68KdotC_Kernel #(
                 setstate =2'b01;
             end
             `div3: begin // divu
-                if (opcode[15]=1'b1 || DIV_Mode === 0) begin
+                if (opcode[15]==1'b1 || DIV_Mode === 0) begin
                 set_rot_cnt = 6'b001101;
                 end else begin
                 set_rot_cnt = 6'b011101;
@@ -2414,7 +2406,7 @@ module TG68KdotC_Kernel #(
                 if (z_error == 1'b0 && set_V_Flag === 1'b0) begin
                 set[`Regwrena] = 1'b1;
                 end
-                if (opcode[15]=1'b0 && (DIV_Mode == 1 || DIV_Mode === 2)) begin
+                if (opcode[15]==1'b0 && (DIV_Mode == 1 || DIV_Mode === 2)) begin
                 dest_2ndLbits = 1'b1;
                 set[`write_reminder] = 1'b1;
                 next_micro_state = `div_end2;
