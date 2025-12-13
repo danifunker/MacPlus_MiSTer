@@ -178,7 +178,7 @@ module TG68K_ALU #(
                     OP1in = result_mulu[63:32];
                 end
             end else begin
-                if (exec[write_lowlong] == 1'b1) begin
+                if (exec[write_lowlong] == 1'b1 || MUL_Mode == 0) begin
                     OP1in = result_mulu[31:0];
                 end else begin
                     OP1in = mulu_reg[31:0];
@@ -302,10 +302,17 @@ module TG68K_ALU #(
         c_in[2] = add_result[17] ^ addsub_a[16] ^ addsub_b[16];
         c_in[3] = add_result[33];
         addsub_q = add_result[32:1];
-        addsub_ofl[0] = (c_in[1] ^ add_result[8] ^ addsub_a[7] ^ addsub_b[7]);   // V Byte
-        addsub_ofl[1] = (c_in[2] ^ add_result[16] ^ addsub_a[15] ^ addsub_b[15]); // V Word
-        addsub_ofl[2] = (c_in[3] ^ add_result[32] ^ addsub_a[31] ^ addsub_b[31]); // V Long
-        c_out = c_in[3:1];
+        if (opaddsub == 1'b0 || long_start == 1'b1) begin // ADD
+            addsub_ofl[0] = (c_in[1] ^ add_result[8] ^ addsub_a[7] ^ addsub_b[7]);   // V Byte
+            addsub_ofl[1] = (c_in[2] ^ add_result[16] ^ addsub_a[15] ^ addsub_b[15]); // V Word
+            addsub_ofl[2] = (c_in[3] ^ add_result[32] ^ addsub_a[31] ^ addsub_b[31]); // V Long
+            c_out = c_in[3:1];
+        end else begin // SUB
+            addsub_ofl[0] = (c_in[1] ^ add_result[8]);   // V Byte
+            addsub_ofl[1] = (c_in[2] ^ add_result[16]); // V Word
+            addsub_ofl[2] = (c_in[3] ^ add_result[32]); // V Long
+            c_out = ~c_in[3:1];
+        end
     end
 
     // ALU and BCD_ARITH
@@ -317,8 +324,8 @@ module TG68K_ALU #(
         halve_carry = OP1out[4] ^ OP2out[4] ^ bcd_pur[5];
 
         bcd_kor_v = 9'b0;
-        if (halve_carry) bcd_kor_v[3:0] = 4'b0110;
-        if (bcd_pur[9])  bcd_kor_v[7:4] = 4'b0110;
+        if (halve_carry || bcd_pur[3:0] > 9) bcd_kor_v[3:0] = 4'b0110;
+        if (bcd_pur[9]  || bcd_pur[8:0] > 9'h099)  bcd_kor_v[7:4] = 4'b0110;
 
         // Default assignments to avoid latches
         Vflag_a = 1'b0;

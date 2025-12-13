@@ -714,28 +714,25 @@ module TG68KdotC_Kernel #(
     assign trap_vector_vbr = (use_VBR_Stackframe == 1'b1) ? (trap_vector + VBR) : trap_vector;
 
     always_comb begin
-        memaddr_a[4:0] = 5'b00000;
-        memaddr_a[7:5] = {3{memaddr_a[4]}};
-        memaddr_a[15:8] = {8{memaddr_a[7]}};
-        memaddr_a[31:16] = {16{memaddr_a[15]}};
+        memaddr_a = 32'b0;
         if (setdisp == 1'b1) begin
             if (exec[briefext] == 1'b1) begin
                 memaddr_a = briefdata + memaddr_delta;
             end else if (setdispbyte == 1'b1) begin
-                memaddr_a[7:0] = last_data_read[7:0];
+                memaddr_a = {{24{last_data_read[7]}}, last_data_read[7:0]};
             end else begin
-                memaddr_a = last_data_read;
+                memaddr_a = {{16{last_data_read[15]}}, last_data_read[15:0]};
             end
         end else if (set[presub] == 1'b1) begin
             if (set[longaktion] == 1'b1) begin
-                memaddr_a[4:0] = 5'b11100; // -4
+                memaddr_a = -32'd4; // -4
             end else if (datatype == 2'b00 && set[use_SP] == 1'b0) begin
-                memaddr_a[4:0] = 5'b11111; // -1
+                memaddr_a = -32'd1; // -1
             end else begin
-                memaddr_a[4:0] = 5'b11110; // -2
+                memaddr_a = -32'd2; // -2
             end
         end else if (interrupt == 1'b1) begin
-            memaddr_a[4:0] = {1'b1, rIPL_nr, 1'b0};
+            memaddr_a = {27'b0, 1'b1, rIPL_nr, 1'b0};
         end
     end
 
