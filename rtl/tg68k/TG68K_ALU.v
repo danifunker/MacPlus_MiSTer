@@ -731,7 +731,7 @@ module TG68K_ALU #(
             bit_msb = ring - bs_shift;
         end
         
-        asl_over_xor = ({1'b0, vector[30:0]} ^ {1'b0, vector[31:1]}, msb};
+        asl_over_xor = {({1'b0, vector[30:0]} ^ {1'b0, vector[31:1]}), msb};
         case (exe_opcode[7:6])
             2'b00: asl_over_xor[8] = 1'b0;
             2'b01, 2'b11: asl_over_xor[16] = 1'b0;
