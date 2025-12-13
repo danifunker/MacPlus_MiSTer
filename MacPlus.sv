@@ -498,6 +498,21 @@ wire [23:1] fx68_a;
 wire        fx68_reset_n;
 
 // fx68k temporarily disabled - using TG68K only
+// Tie off unused fx68k signals to safe defaults
+assign fx68_rw = 1'b1;
+assign fx68_as_n = 1'b1;
+assign fx68_uds_n = 1'b1;
+assign fx68_lds_n = 1'b1;
+assign fx68_E_falling = 1'b0;
+assign fx68_E_rising = 1'b0;
+assign fx68_vma_n = 1'b1;
+assign fx68_fc0 = 1'b0;
+assign fx68_fc1 = 1'b0;
+assign fx68_fc2 = 1'b0;
+assign fx68_dout = 16'h0000;
+assign fx68_a = 23'h0;
+assign fx68_reset_n = 1'b0;
+
 /*
 fx68k fx68k (
 	.clk        ( clk_sys ),
