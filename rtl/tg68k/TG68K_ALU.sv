@@ -145,7 +145,6 @@ module TG68K_ALU #(
     logic        bf_d32;
     logic        bf_s32;
     logic [4:0]  index;
-    integer i;
 
     logic [33:0] hot_msb;
     logic [32:0] vector;
@@ -168,15 +167,6 @@ module TG68K_ALU #(
 
     // Set OP1in
     always_comb begin
-        ALUout = OP1in;
-        ALUout[7] = OP1in[7] | exec_tas;
-        if (exec[opcBFwb] == 1'b1) begin
-            ALUout = result[31:0];
-            if (bf_fffo == 1'b1) begin
-                ALUout = bf_ffo_offset - {26'b0, bf_firstbit};
-            end
-        end
-
         OP1in = addsub_q;
         if (exec[opcABCD] == 1'b1 || exec[opcSBCD] == 1'b1) begin
             OP1in[7:0] = bcd_a[7:0];
@@ -233,6 +223,15 @@ module TG68K_ALU #(
             end
         end else if (exec[opcPACK] == 1'b1) begin
             OP1in[7:0] = {addsub_q[11:8], addsub_q[3:0]};
+        end
+
+        ALUout = OP1in;
+        ALUout[7] = OP1in[7] | exec_tas;
+        if (exec[opcBFwb] == 1'b1) begin
+            ALUout = result[31:0];
+            if (bf_fffo == 1'b1) begin
+                ALUout = bf_ffo_offset - {26'b0, bf_firstbit};
+            end
         end
     end
 
