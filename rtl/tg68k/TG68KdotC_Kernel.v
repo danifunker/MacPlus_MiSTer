@@ -2233,6 +2233,7 @@ module TG68KdotC_Kernel #(
                 //					next_micro_state <= nop;
                 //--					set(update_FC) <= '1';
                 // paste and copy form TH	---------
+            end
             `rte3: begin // RTE
                 setstate = 2'b01; // idle state to wait
                 // for input data to
@@ -2378,7 +2379,7 @@ module TG68KdotC_Kernel #(
                 next_micro_state = `div2;
             end
             `div2: begin // divu
-                if ((OP2out[31:16]=x"0000" || opcode[15] == 1'b1 || DIV_Mode == 0) && OP2out[15:0]=x"0000") begin //div zero
+                if ((OP2out[31:16]==16'h0000 || opcode[15] == 1'b1 || DIV_Mode == 0) && OP2out[15:0]==16'h0000) begin //div zero
                     set_Z_error = 1'b1;
                 end else begin
                     next_micro_state = `div3;
