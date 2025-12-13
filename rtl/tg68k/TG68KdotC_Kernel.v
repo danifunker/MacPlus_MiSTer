@@ -260,9 +260,9 @@ module TG68KdotC_Kernel #(
     reg  [2:0]  DFC;
     reg  [2:0]  SFC;
     
-    reg  [lastOpcBit:0] set;
-    reg  [lastOpcBit:0] set_exec;
-    reg  [lastOpcBit:0] exec;
+    reg  [`lastOpcBit:0] set;
+    reg  [`lastOpcBit:0] set_exec;
+    reg  [`lastOpcBit:0] exec;
     
     reg  [6:0] micro_state;      // Assuming 7 bits for micro_states enum
     reg  [6:0] next_micro_state; // Assuming 7 bits for micro_states enum
@@ -1624,7 +1624,7 @@ module TG68KdotC_Kernel #(
     // Microcode Execution Process
     always @(posedge clk or negedge nReset) begin
         if (!nReset) begin
-            micro_state <= ld_nn;
+            micro_state <= `ld_nn;
             trapd <= 1'b0;
         end else if (clkena_lw) begin
             trapd <= trapmake;
