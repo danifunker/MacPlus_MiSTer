@@ -200,7 +200,7 @@ module TG68K_ALU #(
     always @(*) begin
         ALUout = OP1in;
         ALUout[7] = OP1in[7] | exec_tas;
-        if (exec[opcBFwb]) begin
+        if (exec[`opcBFwb]) begin
             ALUout = result[31:0];
             if (bf_fffo) begin
                 ALUout = bf_ffo_offset - bf_firstbit;
@@ -208,60 +208,60 @@ module TG68K_ALU #(
         end
         
         OP1in = addsub_q;
-        if (exec[opcABCD] | exec[opcSBCD]) begin
+        if (exec[`opcABCD] | exec[`opcSBCD]) begin
             OP1in[7:0] = bcd_a[7:0];
-        end else if (exec[opcMULU] && MUL_Mode != 3) begin
+        end else if (exec[`opcMULU] && MUL_Mode != 3) begin
             if (MUL_Hardware == 0) begin
-                if (exec[write_lowlong] && (MUL_Mode == 1 || MUL_Mode == 2)) begin
+                if (exec[`write_lowlong] && (MUL_Mode == 1 || MUL_Mode == 2)) begin
                     OP1in = result_mulu[31:0];
                 end else begin
                     OP1in = result_mulu[63:32];
                 end
             end else begin
-                if (exec[write_lowlong]) begin
+                if (exec[`write_lowlong]) begin
                     OP1in = result_mulu[31:0];
                 end else begin
                     OP1in = mulu_reg[31:0];
                 end
             end
-        end else if (exec[opcDIVU] && DIV_Mode != 3) begin
+        end else if (exec[`opcDIVU] && DIV_Mode != 3) begin
             if (exe_opcode[15] || DIV_Mode == 0) begin
                 OP1in = {result_div[47:32], result_div[15:0]};
             end else begin
-                if (exec[write_reminder]) begin
+                if (exec[`write_reminder]) begin
                     OP1in = result_div[63:32];
                 end else begin
                     OP1in = result_div[31:0];
                 end
             end
-        end else if (exec[opcOR]) begin
+        end else if (exec[`opcOR]) begin
             OP1in = OP2out | OP1out;
-        end else if (exec[opcAND]) begin
+        end else if (exec[`opcAND]) begin
             OP1in = OP2out & OP1out;
-        end else if (exec[opcScc]) begin
+        end else if (exec[`opcScc]) begin
             OP1in[7:0] = {8{exe_condition}};
-        end else if (exec[opcEOR]) begin
+        end else if (exec[`opcEOR]) begin
             OP1in = OP2out ^ OP1out;
-        end else if (exec[alu_move]) begin
+        end else if (exec[`alu_move]) begin
             OP1in = OP2out;
-        end else if (exec[opcROT]) begin
+        end else if (exec[`opcROT]) begin
             OP1in = rot_out;
-        end else if (exec[exec_BS]) begin
+        end else if (exec[`exec_BS]) begin
             OP1in = BSout;
-        end else if (exec[opcSWAP]) begin
+        end else if (exec[`opcSWAP]) begin
             OP1in = {OP1out[15:0], OP1out[31:16]};
-        end else if (exec[opcBITS]) begin
+        end else if (exec[`opcBITS]) begin
             OP1in = bits_out;
-        end else if (exec[opcBF]) begin
+        end else if (exec[`opcBF]) begin
             OP1in = bf_datareg;
-        end else if (exec[opcMOVESR]) begin
+        end else if (exec[`opcMOVESR]) begin
             OP1in[7:0] = Flags;
             if (exe_opcode[9]) begin
                 OP1in[15:8] = 8'b0;
             end else begin
                 OP1in[15:8] = FlagsSR;
             end
-        end else if (exec[opcPACK]) begin
+        end else if (exec[`opcPACK]) begin
             OP1in[7:0] = {addsub_q[11:8], addsub_q[3:0]};
         end
     end
@@ -271,7 +271,7 @@ module TG68K_ALU #(
 //-----------------------------------------------------------------------------
     always @(*) begin
         addsub_a = OP1out;
-        if (exec[get_bfoffset]) begin
+        if (exec[`get_bfoffset]) begin
             if (sndOPC[11]) begin
                 addsub_a = {OP1out[31], OP1out[31], OP1out[31], OP1out[31:3]};
             end else begin
@@ -279,7 +279,7 @@ module TG68K_ALU #(
             end
         end
         
-        if (exec[subidx]) begin
+        if (exec[`subidx]) begin
             opaddsub = 1'b1;
         end else begin
             opaddsub = 1'b0;
@@ -287,13 +287,13 @@ module TG68K_ALU #(
         
         c_in[0] = 1'b0;
         addsub_b = OP2out;
-        if (exec[opcUNPACK]) begin
+        if (exec[`opcUNPACK]) begin
             addsub_b[15:0] = {4'b0, OP2out[7:4], 4'b0, OP2out[3:0]};
-        end else if (!execOPC && !exec[OP2out_one] && !exec[get_bfoffset]) begin
-            if (!long_start && exe_datatype == 2'b00 && !exec[use_SP]) begin
+        end else if (!execOPC && !exec[`OP2out_one] && !exec[`get_bfoffset]) begin
+            if (!long_start && exe_datatype == 2'b00 && !exec[`use_SP]) begin
                 addsub_b = 32'd1;
-            end else if (!long_start && exe_datatype == 2'b10 && (exec[presub] | exec[postadd] | movem_presub)) begin
-                if (exec[movem_action]) begin
+            end else if (!long_start && exe_datatype == 2'b10 && (exec[`presub] | exec[`postadd] | movem_presub)) begin
+                if (exec[`movem_action]) begin
                     addsub_b = 32'd6;
                 end else begin
                     addsub_b = 32'd4;
@@ -302,14 +302,14 @@ module TG68K_ALU #(
                 addsub_b = 32'd2;
             end
         end else begin
-            if ((exec[use_XZFlag] && Flags[4]) || exec[opcCHK]) begin
+            if ((exec[`use_XZFlag] && Flags[4]) || exec[`opcCHK]) begin
                 c_in[0] = 1'b1;
             end
-            opaddsub = exec[addsub];
+            opaddsub = exec[`addsub];
         end
         
         // patch for un-aligned movem --mikej
-        if (exec[movem_action] || check_aligned) begin
+        if (exec[`movem_action] || check_aligned) begin
             if (!movem_presub) begin  // up
                 if (non_aligned && !long_start) begin  // hold
                     addsub_b = 32'b0;
@@ -355,7 +355,7 @@ module TG68K_ALU #(
         if (bcd_pur[9]) begin
             bcd_kor[7:4] = 4'b0110;
         end
-        if (exec[opcABCD]) begin
+        if (exec[`opcABCD]) begin
             Vflag_a = !bcd_pur[8] & bcd_a[7];
             bcd_a = bcd_pur[9:1] + bcd_kor;
             if (bcd_pur[4] & (bcd_pur[3] | bcd_pur[2])) begin
@@ -660,7 +660,7 @@ module TG68K_ALU #(
             end
         endcase
         
-        if (exec[rot_nop]) begin
+        if (exec[`rot_nop]) begin
             rot_out = OP1out;
             rot_X = Flags[4];
             if (rot_bits == 2'b10) begin  // ROXL, ROXR
@@ -710,7 +710,7 @@ module TG68K_ALU #(
             endcase
         end
         
-        if (exe_opcode[7:6] == 2'b11 || !exec[exec_BS]) begin
+        if (exe_opcode[7:6] == 2'b11 || !exec[`exec_BS]) begin
             bs_shift = 6'b000001;
         end else if (exe_opcode[5]) begin
             bs_shift = OP2out[5:0];
@@ -927,11 +927,11 @@ module TG68K_ALU #(
 //CCR op
 //------------------------------------------------------------------------------
     always @(*) begin
-        if (exec[andiSR]) begin
+        if (exec[`andiSR]) begin
             CCRin = Flags & last_data_read[7:0];
-        end else if (exec[eoriSR]) begin
+        end else if (exec[`eoriSR]) begin
             CCRin = Flags ^ last_data_read[7:0];
-        end else if (exec[oriSR]) begin
+        end else if (exec[`oriSR]) begin
             CCRin = Flags | last_data_read[7:0];
         end else begin
             CCRin = OP2out[7:0];
@@ -939,7 +939,7 @@ module TG68K_ALU #(
         
         // Flags
         flag_z = 3'b0;
-        if (exec[use_XZFlag] && !Flags[2]) begin
+        if (exec[`use_XZFlag] && !Flags[2]) begin
             flag_z = 3'b0;
         end else if (OP1in[7:0] == 8'b0) begin
             flag_z[0] = 1'b1;
@@ -954,11 +954,11 @@ module TG68K_ALU #(
         // Flags NZVC
         if (exe_datatype == 2'b00) begin  // Byte
             set_Flags = {OP1in[7], flag_z[0], addsub_ofl[0], c_out[0]};
-            if (exec[opcABCD] | exec[opcSBCD]) begin
+            if (exec[`opcABCD] | exec[`opcSBCD]) begin
                 set_Flags[0] = bcd_a_carry;
                 set_Flags[1] = Vflag_a;
             end
-        end else if (exe_datatype == 2'b10 || exec[opcCPMAW]) begin  // Long
+        end else if (exe_datatype == 2'b10 || exec[`opcCPMAW]) begin  // Long
             set_Flags = {OP1in[31], flag_z[2], addsub_ofl[2], c_out[2]};
         end else begin  // Word
             set_Flags = {OP1in[15], flag_z[1], addsub_ofl[1], c_out[1]};
@@ -969,20 +969,20 @@ module TG68K_ALU #(
         if (Reset) begin
             Flags <= 8'b0;
         end else if (clkena_lw) begin
-            if (exec[directSR] || set_stop) begin
+            if (exec[`directSR] || set_stop) begin
                 Flags <= data_read[7:0];
             end
-            if (exec[directCCR]) begin
+            if (exec[`directCCR]) begin
                 Flags <= data_read[7:0];
             end
             
-            if (exec[opcROT] && !decodeOPC) begin
+            if (exec[`opcROT] && !decodeOPC) begin
                 asl_VFlag <= ((set_Flags[3] ^ rot_rot) | asl_VFlag);
             end else begin
                 asl_VFlag <= 1'b0;
             end
             
-            if (exec[to_CCR]) begin
+            if (exec[`to_CCR]) begin
                 Flags <= CCRin;
             end else if (Z_error) begin
                 if (micro_state == `trap0) begin
@@ -993,19 +993,19 @@ module TG68K_ALU #(
                         Flags[3:0] <= 4'b0100;
                     end
                 end
-            end else if (!exec[no_Flags]) begin
+            end else if (!exec[`no_Flags]) begin
                 last_Flags1 <= Flags[3:0];
-                if (exec[opcADD]) begin
+                if (exec[`opcADD]) begin
                     Flags[4] <= set_Flags[0];
-                end else if (exec[opcROT] && rot_bits != 2'b11 && !exec[rot_nop]) begin
+                end else if (exec[`opcROT] && rot_bits != 2'b11 && !exec[`rot_nop]) begin
                     Flags[4] <= rot_X;
-                end else if (exec[exec_BS]) begin
+                end else if (exec[`exec_BS]) begin
                     Flags[4] <= bs_X;
                 end
                 
-                if ((exec[opcCMP] | exec[alu_setFlags])) begin
+                if ((exec[`opcCMP] | exec[`alu_setFlags])) begin
                     Flags[3:0] <= set_Flags;
-                end else if (exec[opcDIVU] && DIV_Mode != 3) begin
+                end else if (exec[`opcDIVU] && DIV_Mode != 3) begin
                     if (V_Flag) begin
                         Flags[3:0] <= 4'b1010;
                     end else if (exe_opcode[15] || DIV_Mode == 0) begin
@@ -1013,21 +1013,21 @@ module TG68K_ALU #(
                     end else begin
                         Flags[3:0] <= {OP1in[31], flag_z[2], 2'b0};
                     end
-                end else if (exec[write_reminder] && MUL_Mode != 3) begin
+                end else if (exec[`write_reminder] && MUL_Mode != 3) begin
                     Flags[3] <= set_Flags[3];
                     Flags[2] <= set_Flags[2] & Flags[2];
                     Flags[1:0] <= 2'b0;
-                end else if (exec[write_lowlong] && (MUL_Mode == 1 || MUL_Mode == 2)) begin
+                end else if (exec[`write_lowlong] && (MUL_Mode == 1 || MUL_Mode == 2)) begin
                     Flags[3:2] <= set_Flags[3:2];
                     Flags[1] <= set_mV_Flag;
                     Flags[0] <= 1'b0;
-                end else if (exec[opcOR] | exec[opcAND] | exec[opcEOR] | exec[opcMOVE] | exec[opcMOVEQ] | exec[opcSWAP] | exec[opcBF] | (exec[opcMULU] && MUL_Mode != 3)) begin
+                end else if (exec[`opcOR] | exec[`opcAND] | exec[`opcEOR] | exec[`opcMOVE] | exec[`opcMOVEQ] | exec[`opcSWAP] | exec[`opcBF] | (exec[`opcMULU] && MUL_Mode != 3)) begin
                     Flags[1:0] <= 2'b0;
                     Flags[3:2] <= set_Flags[3:2];
-                    if (exec[opcBF]) begin
+                    if (exec[`opcBF]) begin
                         Flags[3] <= bf_NFlag;
                     end
-                end else if (exec[opcROT]) begin
+                end else if (exec[`opcROT]) begin
                     Flags[3:2] <= set_Flags[3:2];
                     Flags[0] <= rot_C;
                     if (rot_bits == 2'b00 && ((set_Flags[3] ^ rot_rot) | asl_VFlag)) begin
@@ -1035,13 +1035,13 @@ module TG68K_ALU #(
                     end else begin
                         Flags[1] <= 1'b0;
                     end
-                end else if (exec[exec_BS]) begin
+                end else if (exec[`exec_BS]) begin
                     Flags[3:2] <= set_Flags[3:2];
                     Flags[0] <= bs_C;
                     Flags[1] <= bs_V;
-                end else if (exec[opcBITS]) begin
+                end else if (exec[`opcBITS]) begin
                     Flags[2] <= !one_bit_in;
-                end else if (exec[opcCHK2]) begin
+                end else if (exec[`opcCHK2]) begin
                     if (!last_Flags1[0]) begin  // unsigned OP
                         Flags[0] <= Flags[0] | (!set_Flags[0] & !set_Flags[2]);
                     end else begin  // signed OP
@@ -1050,7 +1050,7 @@ module TG68K_ALU #(
                     Flags[1] <= 1'b0;
                     Flags[2] <= Flags[2] | set_Flags[2];
                     Flags[3] <= !last_Flags1[0];
-                end else if (exec[opcCHK]) begin
+                end else if (exec[`opcCHK]) begin
                     if (exe_datatype == 2'b01) begin
                         Flags[3] <= OP1out[15];
                     end else begin
@@ -1174,7 +1174,7 @@ module TG68K_ALU #(
                         FAsign <= 1'b0;
                         mulu_reg[31:0] <= reg_QA;
                     end
-                end else if (!exec[opcMULU]) begin
+                end else if (!exec[`opcMULU]) begin
                     mulu_reg <= result_mulu[63:0];
                 end
             end else begin
@@ -1267,7 +1267,7 @@ module TG68K_ALU #(
                     div_over <= ({1'b0, div_reg[63:32]}) - ({1'b0, OP2outext[15:0], OP2out[15:0]});
                 end
             end
-            if (!exec[write_reminder]) begin
+            if (!exec[`write_reminder]) begin
                 result_div[31:0] <= result_div_pre;
                 if (OP1_sign) begin
                     result_div[63:32] <= -div_quot[63:32];
