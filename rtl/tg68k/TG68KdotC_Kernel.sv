@@ -1074,16 +1074,16 @@ module TG68KdotC_Kernel #(
 
         bf_width[5] = 1'b0;
         if (sndOPC[5] == 1'b1) begin
-            bf_width[4:0] = reg_QB[4:0] - 1;
+            bf_width[4:0] = reg_QB[4:0] - 5'd1;
         end else begin
-            bf_width[4:0] = sndOPC[4:0] - 1;
+            bf_width[4:0] = sndOPC[4:0] - 5'd1;
         end
 
         bf_bhits = bf_width + bf_offset;
         set_oddout = ~bf_bhits[3];
 
         if (opcode[10:8] == 3'b111) begin // INS
-            bf_loffset = 32 - bf_shift;
+            bf_loffset = 6'd32 - bf_shift;
         end else begin
             bf_loffset = bf_shift;
         end
@@ -1091,9 +1091,9 @@ module TG68KdotC_Kernel #(
 
         if (opcode[4:3] == 2'b00) begin
             if (opcode[10:8] == 3'b111) begin // INS
-                bf_shift = bf_bhits + 1;
+                bf_shift = bf_bhits + 6'd1;
             end else begin
-                bf_shift = 31 - bf_bhits;
+                bf_shift = 6'd31 - bf_bhits;
             end
             bf_shift[5] = 1'b0;
         end else begin
@@ -1101,7 +1101,7 @@ module TG68KdotC_Kernel #(
                 bf_shift = 6'b011001 + {3'b000, bf_bhits[2:0]};
                 bf_shift[5] = 1'b0;
             end else begin
-                bf_shift = {3'b000, (3'b111 - bf_bhits[2:0])};
+                bf_shift = {3'b000, (3'd7 - bf_bhits[2:0])}; // 111 is 7
             end
             bf_offset[4:3] = 2'b00;
         end

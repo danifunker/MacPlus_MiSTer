@@ -757,10 +757,10 @@ module TG68K_ALU #(
         if (exe_opcode[8] == 1'b0) bit_nr = ring - bs_shift_mod; // right shift
 
         if (rot_bits[1] == 1'b0) begin // only shift
-            if (exe_opcode[8] == 1'b0) bit_nr = 32 - bs_shift_mod; // right shift
+            if (exe_opcode[8] == 1'b0) bit_nr = 6'd32 - bs_shift_mod; // right shift
 
             if (bs_shift == ring) begin
-                if (exe_opcode[8] == 1'b0) bit_nr = 32 - ring;
+                if (exe_opcode[8] == 1'b0) bit_nr = 6'd32 - ring;
                 else                       bit_nr = ring;
             end
             if (bs_shift > ring) begin
@@ -768,7 +768,7 @@ module TG68K_ALU #(
                     bit_nr = 6'b000000;
                     bs_C = 1'b0;
                 end else begin
-                    bit_nr = ring + 1;
+                    bit_nr = ring + 6'd1;
                 end
             end
         end
