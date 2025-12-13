@@ -77,6 +77,14 @@ module TG68KdotC_Kernel #(
     
     // Register File
     reg  [31:0] regfile [0:15]; 
+    
+    // Initialize regfile to zeros
+    integer init_i;
+    initial begin
+        for (init_i = 0; init_i < 16; init_i = init_i + 1) begin
+            regfile[init_i] = 32'h00000000;
+        end
+    end 
     reg  [3:0]  RDindex_A_bits; // Pointer bits
     reg  [3:0]  RDindex_B_bits;
     integer     RDindex_A;      // Integer index
