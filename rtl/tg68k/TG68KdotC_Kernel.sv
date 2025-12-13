@@ -382,13 +382,13 @@ module TG68KdotC_Kernel #(
 
         if (BitField == 0) begin
             if (oddout == addr[0]) begin
-                data_write_mux = {16'bx, 16'bx, data_write_muxin};
+                data_write_mux = {8'bx, 8'bx, data_write_muxin};
             end else begin
-                data_write_mux = {16'bx, data_write_muxin, 8'bx};
+                data_write_mux = {8'bx, data_write_muxin, 8'bx};
             end
         end else begin
             if (oddout == addr[0]) begin
-                data_write_mux = {16'bx, bf_ext_out, data_write_muxin};
+                data_write_mux = {8'bx, bf_ext_out, data_write_muxin};
             end else begin
                 data_write_mux = {bf_ext_out, data_write_muxin, 8'bx};
             end
@@ -1254,7 +1254,7 @@ module TG68KdotC_Kernel #(
         set_exec = '0;
 
         if (rot_cnt != 6'b000001) begin
-            set_rot_cnt = rot_cnt - 1;
+            set_rot_cnt = rot_cnt - 6'd1;
         end
 
         // Sourcepass - Determine default datatype from opcode
@@ -2967,10 +2967,855 @@ module TG68KdotC_Kernel #(
             end
         endcase
 
+        // use for AND, OR, EOR, CMP
+        if (build_logical == 1'b1) begin
+            ea_build_now = 1'b1;
+            if (set_exec[opcCMP] == 1'b0 && (opcode[8] == 1'b0 || opcode[5:4] == 2'b00)) begin
+                set_exec[Regwrena] = 1'b1;
+            end
+            if (opcode[8] == 1'b1) begin
+                write_back = 1'b1;
+                set_exec[ea_data_OP1] = 1'b1;
+            end else begin
+                source_lowbits = 1'b1;
+                if (opcode[3] == 1'b1) begin // use for cmp
+                    source_areg = 1'b1;
+                end
+                if (setexecOPC == 1'b1) begin
+                    dest_hbits = 1'b1;
+                end
+            end
+        end
 
-        // Final assignment to set_datatype to pick up the calculated datatype
+        // use for ABCD, SBCD
+        if (build_bcd == 1'b1) begin
+            set_exec[use_XZFlag] = 1'b1;
+            set_exec[ea_data_OP1] = 1'b1;
+            write_back = 1'b1;
+            source_lowbits = 1'b1;
+            if (opcode[3] == 1'b1) begin
+                if (decodeOPC == 1'b1) begin
+                    if (opcode[2:0] == 3'b111) begin
+                        set[use_SP] = 1'b1;
+                    end
+                    setstate = 2'b10;
+                    set[update_ld] = 1'b1;
+                    set[presub] = 1'b1;
+                    next_micro_state = op_AxAy;
+                    dest_areg = 1'b1; // ???
+                end
+            end else begin
+                dest_hbits = 1'b1;
+                set_exec[Regwrena] = 1'b1;
+            end
+        end
+
+        if (set_Z_error == 1'b1) begin // divu by zero
+            trapmake = 1'b1; // important for USP
+            if (trapd == 1'b0) begin
+                writePC = 1'b1;
+            end
+        end
+
+        // Microcode state machine
+        case (micro_state)
+            ld_nn: begin // (nnnn).w/l=>
+                set[get_ea_now] = 1'b1;
+                setnextpass = 1'b1;
+                set[addrlong] = 1'b1;
+            end
+            st_nn: begin // =>(nnnn).w/l
+                setstate = 2'b11;
+                set[addrlong] = 1'b1;
+                next_micro_state = nop;
+            end
+            ld_dAn1: begin // d(An)=>, --d(PC)=>
+                set[get_ea_now] = 1'b1;
+                setdisp = 1'b1; // word
+                setnextpass = 1'b1;
+            end
+            ld_AnXn1: begin // d(An,Xn)=>, --d(PC,Xn)=>
+                if (brief[8] == 1'b0 || extAddr_Mode == 0 || (CPU[1] == 1'b0 && extAddr_Mode == 2)) begin
+                    setdisp = 1'b1; // byte
+                    setdispbyte = 1'b1;
+                    setstate = 2'b01;
+                    set[briefext] = 1'b1;
+                    next_micro_state = ld_AnXn2;
+                end else begin
+                    if (brief[7] == 1'b1) begin // suppress Base
+                        set_Suppress_Base = 1'b1;
+                    end else if (exec[dispouter] == 1'b1) begin
+                        set[dispouter] = 1'b1;
+                    end
+                    if (brief[5] == 1'b0) begin // NULL Base Displacement
+                        setstate = 2'b01;
+                    end else begin // WORD Base Displacement
+                        if (brief[4] == 1'b1) begin
+                            set[longaktion] = 1'b1; // LONG Base Displacement
+                        end
+                    end
+                    next_micro_state = ld_229_1;
+                end
+            end
+            ld_AnXn2: begin
+                set[get_ea_now] = 1'b1;
+                setdisp = 1'b1; // brief
+                setnextpass = 1'b1;
+            end
+            ld_229_1: begin // (bd,An,Xn)=>, --(bd,PC,Xn)=>
+                if (brief[5] == 1'b1) begin // Base Displacement
+                    setdisp = 1'b1; // add last_data_read
+                end
+                if (brief[6] == 1'b0 && brief[2] == 1'b0) begin // Preindex or Index
+                    set[briefext] = 1'b1;
+                    setstate = 2'b01;
+                    if (brief[1:0] == 2'b00) begin
+                        next_micro_state = ld_AnXn2;
+                    end else begin
+                        next_micro_state = ld_229_2;
+                    end
+                end else begin
+                    if (brief[1:0] == 2'b00) begin
+                        set[get_ea_now] = 1'b1;
+                        setnextpass = 1'b1;
+                    end else begin
+                        setstate = 2'b10;
+                        setaddrvalue = 1'b1;
+                        set[longaktion] = 1'b1;
+                        next_micro_state = ld_229_3;
+                    end
+                end
+            end
+            ld_229_2: begin
+                setdisp = 1'b1; // add Index
+                setstate = 2'b10;
+                setaddrvalue = 1'b1;
+                set[longaktion] = 1'b1;
+                next_micro_state = ld_229_3;
+            end
+            ld_229_3: begin
+                set_Suppress_Base = 1'b1;
+                set[dispouter] = 1'b1;
+                if (brief[1] == 1'b0) begin // NULL Outer Displacement
+                    setstate = 2'b01;
+                end else begin // WORD Outer Displacement
+                    if (brief[0] == 1'b1) begin
+                        set[longaktion] = 1'b1; // LONG Outer Displacement
+                    end
+                end
+                next_micro_state = ld_229_4;
+            end
+            ld_229_4: begin
+                if (brief[1] == 1'b1) begin // Outer Displacement
+                    setdisp = 1'b1; // add last_data_read
+                end
+                if (brief[6] == 1'b0 && brief[2] == 1'b1) begin // Postindex
+                    set[briefext] = 1'b1;
+                    setstate = 2'b01;
+                    next_micro_state = ld_AnXn2;
+                end else begin
+                    set[get_ea_now] = 1'b1;
+                    setnextpass = 1'b1;
+                end
+            end
+            st_dAn1: begin // =>d(An)
+                setstate = 2'b11;
+                setdisp = 1'b1; // word
+                next_micro_state = nop;
+            end
+            st_AnXn1: begin // =>d(An,Xn)
+                if (brief[8] == 1'b0 || extAddr_Mode == 0 || (CPU[1] == 1'b0 && extAddr_Mode == 2)) begin
+                    setdisp = 1'b1; // byte
+                    setdispbyte = 1'b1;
+                    setstate = 2'b01;
+                    set[briefext] = 1'b1;
+                    next_micro_state = st_AnXn2;
+                end else begin
+                    if (brief[7] == 1'b1) begin // suppress Base
+                        set_Suppress_Base = 1'b1;
+                    end
+                    if (brief[5] == 1'b0) begin // NULL Base Displacement
+                        setstate = 2'b01;
+                    end else begin // WORD Base Displacement
+                        if (brief[4] == 1'b1) begin
+                            set[longaktion] = 1'b1; // LONG Base Displacement
+                        end
+                    end
+                    next_micro_state = st_229_1;
+                end
+            end
+            st_AnXn2: begin
+                setstate = 2'b11;
+                setdisp = 1'b1; // brief
+                set[hold_dwr] = 1'b1;
+                next_micro_state = nop;
+            end
+            st_229_1: begin
+                if (brief[5] == 1'b1) begin // Base Displacement
+                    setdisp = 1'b1; // add last_data_read
+                end
+                if (brief[6] == 1'b0 && brief[2] == 1'b0) begin // Preindex or Index
+                    set[briefext] = 1'b1;
+                    setstate = 2'b01;
+                    if (brief[1:0] == 2'b00) begin
+                        next_micro_state = st_AnXn2;
+                    end else begin
+                        next_micro_state = st_229_2;
+                    end
+                end else begin
+                    if (brief[1:0] == 2'b00) begin
+                        setstate = 2'b11;
+                        next_micro_state = nop;
+                    end else begin
+                        set[hold_dwr] = 1'b1;
+                        setstate = 2'b10;
+                        set[longaktion] = 1'b1;
+                        next_micro_state = st_229_3;
+                    end
+                end
+            end
+            st_229_2: begin
+                setdisp = 1'b1; // add Index
+                set[hold_dwr] = 1'b1;
+                setstate = 2'b10;
+                set[longaktion] = 1'b1;
+                next_micro_state = st_229_3;
+            end
+            st_229_3: begin
+                set[hold_dwr] = 1'b1;
+                set_Suppress_Base = 1'b1;
+                set[dispouter] = 1'b1;
+                if (brief[1] == 1'b0) begin // NULL Outer Displacement
+                    setstate = 2'b01;
+                end else begin // WORD Outer Displacement
+                    if (brief[0] == 1'b1) begin
+                        set[longaktion] = 1'b1; // LONG Outer Displacement
+                    end
+                end
+                next_micro_state = st_229_4;
+            end
+            st_229_4: begin
+                set[hold_dwr] = 1'b1;
+                if (brief[1] == 1'b1) begin // Outer Displacement
+                    setdisp = 1'b1; // add last_data_read
+                end
+                if (brief[6] == 1'b0 && brief[2] == 1'b1) begin // Postindex
+                    set[briefext] = 1'b1;
+                    setstate = 2'b01;
+                    next_micro_state = st_AnXn2;
+                end else begin
+                    setstate = 2'b11;
+                    next_micro_state = nop;
+                end
+            end
+            bra1: begin // bra
+                if (exe_condition == 1'b1) begin
+                    TG68_PC_brw = 1'b1; // pc+0000
+                    next_micro_state = nop;
+                    skipFetch = 1'b1;
+                end
+            end
+            bsr1: begin // bsr short
+                TG68_PC_brw = 1'b1;
+                next_micro_state = nop;
+            end
+            bsr2: begin // bsr
+                if (long_start == 1'b0) begin
+                    TG68_PC_brw = 1'b1;
+                end
+                skipFetch = 1'b1;
+                set[longaktion] = 1'b1;
+                writePC = 1'b1;
+                setstate = 2'b11;
+                next_micro_state = nopnop;
+                setstackaddr = 1'b1;
+            end
+            nopnop: begin
+                next_micro_state = nop;
+            end
+            dbcc1: begin // dbcc
+                if (exe_condition == 1'b0) begin
+                    Regwrena_now = 1'b1;
+                    if (c_out[1] == 1'b1) begin
+                        skipFetch = 1'b1;
+                        next_micro_state = nop;
+                        TG68_PC_brw = 1'b1;
+                    end
+                end
+            end
+            chk20: begin // if C is set -> signed compare
+                set[ea_data_OP1] = 1'b1;
+                set[addsub] = 1'b1;
+                set[alu_exec] = 1'b1;
+                set[alu_setFlags] = 1'b1;
+                setstate = 2'b01;
+                next_micro_state = chk21;
+            end
+            chk21: begin // check lower bound
+                dest_2ndHbits = 1'b1;
+                if (sndOPC[15] == 1'b1) begin
+                    set_datatype = 2'b10; // long
+                    dest_LDRareg = 1'b1;
+                    if (opcode[10:9] == 2'b00) begin
+                        set[opcEXTB] = 1'b1;
+                    end
+                end
+                set[addsub] = 1'b1;
+                set[alu_exec] = 1'b1;
+                set[alu_setFlags] = 1'b1;
+                setstate = 2'b01;
+                next_micro_state = chk22;
+            end
+            chk22: begin // check upper bound
+                dest_2ndHbits = 1'b1;
+                set[ea_data_OP2] = 1'b1;
+                if (sndOPC[15] == 1'b1) begin
+                    set_datatype = 2'b10; // long
+                    dest_LDRareg = 1'b1;
+                end
+                set[addsub] = 1'b1;
+                set[alu_exec] = 1'b1;
+                set[opcCHK2] = 1'b1;
+                set[opcEXTB] = exec[opcEXTB];
+                if (sndOPC[11] == 1'b1) begin
+                    setstate = 2'b01;
+                    next_micro_state = chk23;
+                end
+            end
+            chk23: begin
+                setstate = 2'b01;
+                next_micro_state = chk24;
+            end
+            chk24: begin
+                if (Flags[0] == 1'b1) begin
+                    trapmake = 1'b1;
+                end
+            end
+            cas1: begin
+                setstate = 2'b01;
+                next_micro_state = cas2;
+            end
+            cas2: begin
+                source_2ndMbits = 1'b1;
+                if (Flags[2] == 1'b1) begin
+                    setstate = 2'b11;
+                    set[write_reg] = 1'b1;
+                    set[restore_ADDR] = 1'b1;
+                    next_micro_state = nop;
+                end else begin
+                    set[Regwrena] = 1'b1;
+                    set[ea_data_OP2] = 1'b1;
+                    dest_2ndLbits = 1'b1;
+                    set[alu_move] = 1'b1;
+                end
+            end
+            cas21: begin
+                dest_2ndHbits = 1'b1;
+                dest_LDRareg = sndOPC[15];
+                set[get_ea_now] = 1'b1;
+                next_micro_state = cas22;
+            end
+            cas22: begin
+                setstate = 2'b01;
+                source_2ndLbits = 1'b1;
+                set[ea_data_OP1] = 1'b1;
+                set[addsub] = 1'b1;
+                set[alu_exec] = 1'b1;
+                set[alu_setFlags] = 1'b1;
+                next_micro_state = cas23;
+            end
+            cas23: begin
+                dest_LDRHbits = 1'b1;
+                set[get_ea_now] = 1'b1;
+                next_micro_state = cas24;
+            end
+            cas24: begin
+                if (Flags[2] == 1'b1) begin
+                    set[alu_setFlags] = 1'b1;
+                end
+                setstate = 2'b01;
+                set[hold_dwr] = 1'b1;
+                source_LDRLbits = 1'b1;
+                set[ea_data_OP1] = 1'b1;
+                set[addsub] = 1'b1;
+                set[alu_exec] = 1'b1;
+                next_micro_state = cas25;
+            end
+            cas25: begin
+                setstate = 2'b01;
+                set[hold_dwr] = 1'b1;
+                next_micro_state = cas26;
+            end
+            cas26: begin
+                if (Flags[2] == 1'b1) begin // write Update 1 to Destination 1
+                    source_2ndMbits = 1'b1;
+                    set[write_reg] = 1'b1;
+                    dest_2ndHbits = 1'b1;
+                    dest_LDRareg = sndOPC[15];
+                    setstate = 2'b11;
+                    set[get_ea_now] = 1'b1;
+                    next_micro_state = cas27;
+                end else begin // write Destination 2 to Compare 2 first
+                    set[hold_dwr] = 1'b1;
+                    set[hold_OP2] = 1'b1;
+                    dest_LDRLbits = 1'b1;
+                    set[alu_move] = 1'b1;
+                    set[Regwrena] = 1'b1;
+                    set[ea_data_OP2] = 1'b1;
+                    next_micro_state = cas28;
+                end
+            end
+            cas27: begin // write Update 2 to Destination 2
+                source_LDRMbits = 1'b1;
+                set[write_reg] = 1'b1;
+                dest_LDRHbits = 1'b1;
+                setstate = 2'b11;
+                set[get_ea_now] = 1'b1;
+                next_micro_state = nopnop;
+            end
+            cas28: begin // write Destination 1 to Compare 1 second
+                dest_2ndLbits = 1'b1;
+                set[alu_move] = 1'b1;
+                set[Regwrena] = 1'b1;
+            end
+            movem1: begin // movem
+                if (last_data_read[15:0] != 16'h0000) begin
+                    setstate = 2'b01;
+                    if (opcode[5:3] == 3'b100) begin
+                        set[mem_addsub] = 1'b1;
+                        if (CPU[1] == 1'b1) begin
+                            set[Regwrena] = 1'b1; // tg
+                        end
+                    end
+                    next_micro_state = movem2;
+                end
+            end
+            movem2: begin // movem
+                if (movem_run == 1'b0) begin
+                    setstate = 2'b01;
+                end else begin
+                    set[movem_action] = 1'b1;
+                    set[mem_addsub] = 1'b1;
+                    next_micro_state = movem2;
+                    if (opcode[10] == 1'b0) begin
+                        setstate = 2'b11;
+                        set[write_reg] = 1'b1;
+                    end else begin
+                        setstate = 2'b10;
+                    end
+                end
+            end
+            andi: begin // andi
+                if (opcode[5:4] != 2'b00) begin
+                    setnextpass = 1'b1;
+                end
+            end
+            pack1: begin // pack -(Ax),-(Ay)
+                if (opcode[2:0] == 3'b111) begin
+                    set[use_SP] = 1'b1;
+                end
+                set[hold_ea_data] = 1'b1;
+                set[update_ld] = 1'b1;
+                setstate = 2'b10;
+                set[presub] = 1'b1;
+                next_micro_state = pack2;
+                dest_areg = 1'b1;
+            end
+            pack2: begin
+                if (opcode[11:9] == 3'b111) begin
+                    set[use_SP] = 1'b1;
+                end
+                set[hold_ea_data] = 1'b1;
+                set_direct_data = 1'b1;
+                if (opcode[7:6] == 2'b01) begin // pack
+                    datatype = 2'b00; // Byte
+                end else begin // unpk
+                    datatype = 2'b01; // Word
+                end
+                set[presub] = 1'b1;
+                dest_hbits = 1'b1;
+                dest_areg = 1'b1;
+                setstate = 2'b10;
+                next_micro_state = pack3;
+            end
+            pack3: begin
+                skipFetch = 1'b1;
+            end
+            op_AxAy: begin // op -(Ax),-(Ay)
+                if (opcode[11:9] == 3'b111) begin
+                    set[use_SP] = 1'b1;
+                end
+                set_direct_data = 1'b1;
+                set[presub] = 1'b1;
+                dest_hbits = 1'b1;
+                dest_areg = 1'b1;
+                setstate = 2'b10;
+            end
+            cmpm: begin // cmpm (Ay)+,(Ax)+
+                if (opcode[11:9] == 3'b111) begin
+                    set[use_SP] = 1'b1;
+                end
+                set_direct_data = 1'b1;
+                set[postadd] = 1'b1;
+                dest_hbits = 1'b1;
+                dest_areg = 1'b1;
+                setstate = 2'b10;
+            end
+            link1: begin // link
+                setstate = 2'b11;
+                source_areg = 1'b1;
+                set[opcMOVE] = 1'b1;
+                set[Regwrena] = 1'b1;
+                next_micro_state = link2;
+            end
+            link2: begin // link
+                setstackaddr = 1'b1;
+                set[ea_data_OP2] = 1'b1;
+            end
+            unlink1: begin // unlink
+                setstate = 2'b10;
+                setstackaddr = 1'b1;
+                set[postadd] = 1'b1;
+                next_micro_state = unlink2;
+            end
+            unlink2: begin // unlink
+                set[ea_data_OP2] = 1'b1;
+            end
+            trap00: begin // TRAP format #2
+                next_micro_state = trap0;
+                set[presub] = 1'b1;
+                setstackaddr = 1'b1;
+                setstate = 2'b11;
+                datatype = 2'b10;
+            end
+            trap0: begin // TRAP
+                set[presub] = 1'b1;
+                setstackaddr = 1'b1;
+                setstate = 2'b11;
+                if (use_VBR_Stackframe == 1'b1) begin // 68010
+                    set[writePC_add] = 1'b1;
+                    datatype = 2'b01;
+                    next_micro_state = trap1;
+                end else begin
+                    if (trap_interrupt == 1'b1 || trap_trace == 1'b1 || trap_berr == 1'b1) begin
+                        writePC = 1'b1;
+                    end
+                    datatype = 2'b10;
+                    next_micro_state = trap2;
+                end
+            end
+            trap1: begin // TRAP
+                if (trap_interrupt == 1'b1 || trap_trace == 1'b1) begin
+                    writePC = 1'b1;
+                end
+                set[presub] = 1'b1;
+                setstackaddr = 1'b1;
+                setstate = 2'b11;
+                datatype = 2'b10;
+                next_micro_state = trap2;
+            end
+            trap2: begin // TRAP
+                set[presub] = 1'b1;
+                setstackaddr = 1'b1;
+                setstate = 2'b11;
+                datatype = 2'b01;
+                writeSR = 1'b1;
+                if (trap_berr == 1'b1) begin
+                    next_micro_state = trap4;
+                end else begin
+                    next_micro_state = trap3;
+                end
+            end
+            trap3: begin // TRAP
+                set_vectoraddr = 1'b1;
+                datatype = 2'b10;
+                set[direct_delta] = 1'b1;
+                set[directPC] = 1'b1;
+                setstate = 2'b10;
+                next_micro_state = nopnop;
+            end
+            trap4: begin // TRAP
+                set[presub] = 1'b1;
+                setstackaddr = 1'b1;
+                setstate = 2'b11;
+                datatype = 2'b01;
+                writeSR = 1'b1;
+                next_micro_state = trap5;
+            end
+            trap5: begin // TRAP
+                set[presub] = 1'b1;
+                setstackaddr = 1'b1;
+                setstate = 2'b11;
+                datatype = 2'b10;
+                writeSR = 1'b1;
+                next_micro_state = trap6;
+            end
+            trap6: begin // TRAP
+                set[presub] = 1'b1;
+                setstackaddr = 1'b1;
+                setstate = 2'b11;
+                datatype = 2'b01;
+                writeSR = 1'b1;
+                next_micro_state = trap3;
+            end
+            rte1: begin // RTE
+                datatype = 2'b10;
+                setstate = 2'b10;
+                set[postadd] = 1'b1;
+                setstackaddr = 1'b1;
+                set[directPC] = 1'b1;
+                if (use_VBR_Stackframe == 1'b0 || opcode[2] == 1'b1) begin // opcode[2]=1 => RTR
+                    set[update_FC] = 1'b1;
+                    set[direct_delta] = 1'b1;
+                end
+                next_micro_state = rte2;
+            end
+            rte2: begin // RTE
+                datatype = 2'b01;
+                set[update_FC] = 1'b1;
+                if (use_VBR_Stackframe == 1'b1 && opcode[2] == 1'b0) begin
+                    setstate = 2'b10;
+                    set[postadd] = 1'b1;
+                    setstackaddr = 1'b1;
+                    next_micro_state = rte3;
+                end else begin
+                    next_micro_state = nop;
+                end
+            end
+            rte3: begin // RTE
+                setstate = 2'b01;
+                next_micro_state = rte4;
+            end
+            rte4: begin // RTE
+                if (last_data_in[15:12] == 4'b0010) begin
+                    setstate = 2'b10;
+                    datatype = 2'b10;
+                    set[postadd] = 1'b1;
+                    setstackaddr = 1'b1;
+                    next_micro_state = rte5;
+                end else begin
+                    datatype = 2'b01;
+                    next_micro_state = nop;
+                end
+            end
+            rte5: begin // RTE
+                next_micro_state = nop;
+            end
+            rtd1: begin // RTD
+                next_micro_state = rtd2;
+            end
+            rtd2: begin // RTD
+                setstackaddr = 1'b1;
+                set[Regwrena] = 1'b1;
+            end
+            movec1: begin // MOVEC
+                set[briefext] = 1'b1;
+                set_writePCbig = 1'b1;
+                if ((brief[11:0] == 12'h000 || brief[11:0] == 12'h001 || brief[11:0] == 12'h800 || brief[11:0] == 12'h801) ||
+                    (CPU[1] == 1'b1 && (brief[11:0] == 12'h002 || brief[11:0] == 12'h802 || brief[11:0] == 12'h803 || brief[11:0] == 12'h804))) begin
+                    if (opcode[0] == 1'b0) begin
+                        set[Regwrena] = 1'b1;
+                    end
+                end else begin
+                    trap_illegal = 1'b1;
+                    trapmake = 1'b1;
+                end
+            end
+            movep1: begin // MOVEP d(An)
+                setdisp = 1'b1;
+                set[mem_addsub] = 1'b1;
+                set[mem_byte] = 1'b1;
+                set[OP1addr] = 1'b1;
+                if (opcode[6] == 1'b1) begin
+                    set[movepl] = 1'b1;
+                end
+                if (opcode[7] == 1'b0) begin
+                    setstate = 2'b10;
+                end else begin
+                    setstate = 2'b11;
+                end
+                next_micro_state = movep2;
+            end
+            movep2: begin
+                if (opcode[6] == 1'b1) begin
+                    set[mem_addsub] = 1'b1;
+                    set[OP1addr] = 1'b1;
+                end
+                if (opcode[7] == 1'b0) begin
+                    setstate = 2'b10;
+                end else begin
+                    setstate = 2'b11;
+                end
+                next_micro_state = movep3;
+            end
+            movep3: begin
+                if (opcode[6] == 1'b1) begin
+                    set[mem_addsub] = 1'b1;
+                    set[OP1addr] = 1'b1;
+                    set[mem_byte] = 1'b1;
+                    if (opcode[7] == 1'b0) begin
+                        setstate = 2'b10;
+                    end else begin
+                        setstate = 2'b11;
+                    end
+                    next_micro_state = movep4;
+                end else begin
+                    datatype = 2'b01; // Word
+                end
+            end
+            movep4: begin
+                if (opcode[7] == 1'b0) begin
+                    setstate = 2'b10;
+                end else begin
+                    setstate = 2'b11;
+                end
+                next_micro_state = movep5;
+            end
+            movep5: begin
+                datatype = 2'b10; // Long
+            end
+            mul1: begin // mulu
+                if (opcode[15] == 1'b1 || MUL_Mode == 0) begin
+                    set_rot_cnt = 6'b001110;
+                end else begin
+                    set_rot_cnt = 6'b011110;
+                end
+                setstate = 2'b01;
+                next_micro_state = mul2;
+            end
+            mul2: begin // mulu
+                setstate = 2'b01;
+                if (rot_cnt == 6'b00001) begin
+                    next_micro_state = mul_end1;
+                end else begin
+                    next_micro_state = mul2;
+                end
+            end
+            mul_end1: begin // mulu
+                if (opcode[15] == 1'b0) begin
+                    set[hold_OP2] = 1'b1;
+                end
+                datatype = 2'b10;
+                set[opcMULU] = 1'b1;
+                if (opcode[15] == 1'b0 && (MUL_Mode == 1 || MUL_Mode == 2)) begin
+                    dest_2ndHbits = 1'b1;
+                    set[write_lowlong] = 1'b1;
+                    if (sndOPC[10] == 1'b1) begin
+                        setstate = 2'b01;
+                        next_micro_state = mul_end2;
+                    end
+                    set[Regwrena] = 1'b1;
+                end
+                datatype = 2'b10;
+            end
+            mul_end2: begin // divu
+                dest_2ndLbits = 1'b1;
+                set[write_reminder] = 1'b1;
+                set[Regwrena] = 1'b1;
+                set[opcMULU] = 1'b1;
+            end
+            div1: begin // divu
+                setstate = 2'b01;
+                next_micro_state = div2;
+            end
+            div2: begin // divu
+                if ((OP2out[31:16] == 16'h0000 || opcode[15] == 1'b1 || DIV_Mode == 0) && OP2out[15:0] == 16'h0000) begin // div zero
+                    set_Z_error = 1'b1;
+                end else begin
+                    next_micro_state = div3;
+                end
+                set[ld_rot_cnt] = 1'b1;
+                setstate = 2'b01;
+            end
+            div3: begin // divu
+                if (opcode[15] == 1'b1 || DIV_Mode == 0) begin
+                    set_rot_cnt = 6'b001101;
+                end else begin
+                    set_rot_cnt = 6'b011101;
+                end
+                setstate = 2'b01;
+                next_micro_state = div4;
+            end
+            div4: begin // divu
+                setstate = 2'b01;
+                if (rot_cnt == 6'b00001) begin
+                    next_micro_state = div_end1;
+                end else begin
+                    next_micro_state = div4;
+                end
+            end
+            div_end1: begin // divu
+                if (Z_error == 1'b0 && set_V_Flag == 1'b0) begin
+                    set[Regwrena] = 1'b1;
+                end
+                if (opcode[15] == 1'b0 && (DIV_Mode == 1 || DIV_Mode == 2)) begin
+                    dest_2ndLbits = 1'b1;
+                    set[write_reminder] = 1'b1;
+                    next_micro_state = div_end2;
+                    setstate = 2'b01;
+                end
+                set[opcDIVU] = 1'b1;
+                datatype = 2'b10;
+            end
+            div_end2: begin // divu
+                if (exec[Regwrena] == 1'b1) begin
+                    set[Regwrena] = 1'b1;
+                end else begin
+                    set[no_Flags] = 1'b1;
+                end
+                dest_2ndHbits = 1'b1;
+                set[opcDIVU] = 1'b1;
+            end
+            rota1: begin
+                if (OP2out[5:0] != 6'b000000) begin
+                    set_rot_cnt = OP2out[5:0];
+                end else begin
+                    set_exec[rot_nop] = 1'b1;
+                end
+            end
+            bf1: begin
+                setstate = 2'b10;
+            end
+            default: ;
+        endcase
+
+        // Final assignment to set_datatype
         set_datatype = datatype;
     end
+
+    // MOVEC
+    always_ff @(posedge clk) begin
+        if (Reset == 1'b1) begin
+            VBR <= 32'b0;
+            CACR <= 4'b0;
+        end else if (clkena_lw == 1'b1 && exec[movec_wr] == 1'b1) begin
+            case (brief[11:0])
+                12'h000: SFC <= reg_QA[2:0]; // SFC -- 68010+
+                12'h001: DFC <= reg_QA[2:0]; // DFC -- 68010+
+                12'h002: CACR <= reg_QA[3:0]; // 68020+
+                12'h800: ; // USP -- 68010+
+                12'h801: VBR <= reg_QA; // 68010+
+                12'h802: ; // CAAR -- 68020+
+                12'h803: ; // MSP -- 68020+
+                12'h804: ; // isP -- 68020+
+                default: ;
+            endcase
+        end
+    end
+
+    always_comb begin
+        movec_data = 32'b0;
+        case (brief[11:0])
+            12'h000: movec_data = {29'b0, SFC};
+            12'h001: movec_data = {29'b0, DFC};
+            12'h002: movec_data = {28'b0, (CACR & 4'b0011)};
+            12'h801: movec_data = VBR;
+            default: ;
+        endcase
+    end
+
+    assign CACR_out = CACR;
+    assign VBR_out = VBR;
 
     // execute microcode
     always_ff @(posedge clk) begin

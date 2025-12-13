@@ -64,7 +64,6 @@ module TG68K_ALU #(
 
     // BCD
     logic [9:0]  bcd_pur;
-    logic [8:0]  bcd_kor;
     logic        halve_carry;
     logic        Vflag_a;
     logic        bcd_a_carry;
@@ -316,7 +315,6 @@ module TG68K_ALU #(
         logic [8:0] bcd_a_v;
 
         bcd_pur = {c_in[1], add_result[8:0]};
-        bcd_kor = 9'b000000000;
         halve_carry = OP1out[4] ^ OP2out[4] ^ bcd_pur[5];
 
         bcd_kor_v = 9'b0;
@@ -327,13 +325,6 @@ module TG68K_ALU #(
         Vflag_a = 1'b0;
         bcd_a = 9'b0;
         bcd_a_carry = 1'b0;
-
-        if (halve_carry == 1'b1) begin
-            bcd_kor[3:0] = 4'b0110; // -6
-        end
-        if (bcd_pur[9] == 1'b1) begin
-            bcd_kor[7:4] = 4'b0110; // -60
-        end
 
         if (exec[opcABCD] == 1'b1) begin
             bcd_a_v = bcd_pur[9:1] + bcd_kor_v;
@@ -739,22 +730,22 @@ module TG68K_ALU #(
         case (ring)
             6'b001001: begin
                 if (bs_shift == 63) bs_shift_mod = 6'b000000;
-                else if (bs_shift > 53) bs_shift_mod = bs_shift - 54;
-                else if (bs_shift > 44) bs_shift_mod = bs_shift - 45;
-                else if (bs_shift > 35) bs_shift_mod = bs_shift - 36;
-                else if (bs_shift > 26) bs_shift_mod = bs_shift - 27;
-                else if (bs_shift > 17) bs_shift_mod = bs_shift - 18;
-                else if (bs_shift > 8)  bs_shift_mod = bs_shift - 9;
+                else if (bs_shift > 53) bs_shift_mod = bs_shift - 6'd54;
+                else if (bs_shift > 44) bs_shift_mod = bs_shift - 6'd45;
+                else if (bs_shift > 35) bs_shift_mod = bs_shift - 6'd36;
+                else if (bs_shift > 26) bs_shift_mod = bs_shift - 6'd27;
+                else if (bs_shift > 17) bs_shift_mod = bs_shift - 6'd18;
+                else if (bs_shift > 8)  bs_shift_mod = bs_shift - 6'd9;
                 else                    bs_shift_mod = bs_shift;
             end
             6'b010001: begin
-                if (bs_shift > 50) bs_shift_mod = bs_shift - 51;
-                else if (bs_shift > 33) bs_shift_mod = bs_shift - 34;
-                else if (bs_shift > 16) bs_shift_mod = bs_shift - 17;
+                if (bs_shift > 50) bs_shift_mod = bs_shift - 6'd51;
+                else if (bs_shift > 33) bs_shift_mod = bs_shift - 6'd34;
+                else if (bs_shift > 16) bs_shift_mod = bs_shift - 6'd17;
                 else                    bs_shift_mod = bs_shift;
             end
             6'b100001: begin
-                if (bs_shift > 32) bs_shift_mod = bs_shift - 33;
+                if (bs_shift > 32) bs_shift_mod = bs_shift - 6'd33;
                 else               bs_shift_mod = bs_shift;
             end
             6'b001000: bs_shift_mod = {3'b000, bs_shift[2:0]};
