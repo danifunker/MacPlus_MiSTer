@@ -44,7 +44,7 @@ module TG68K_ALU #(
     input wire set_stop,
     input wire Z_error,
     input wire [1:0] rot_bits,
-    input wire [lastOpcBit:0] exec,
+    input wire [`lastOpcBit:0] exec,
     input wire [31:0] OP1out,
     input wire [31:0] OP2out,
     input wire [31:0] reg_QA,
@@ -985,7 +985,7 @@ module TG68K_ALU #(
             if (exec[to_CCR]) begin
                 Flags <= CCRin;
             end else if (Z_error) begin
-                if (micro_state == trap0) begin
+                if (micro_state == `trap0) begin
                     // Undocumented behavior (flags when div by zero)
                     if (!exe_opcode[8]) begin
                         Flags[3:0] <= {1'b0, !reg_QA[31], 2'b0};
@@ -1165,7 +1165,7 @@ module TG68K_ALU #(
     always @(posedge clk) begin
         if (clkena_lw) begin
             if (MUL_Hardware == 0) begin
-                if (micro_state == mul1) begin
+                if (micro_state == `mul1) begin
                     mulu_reg[63:32] <= 32'b0;
                     if (divs && ((exe_opcode[15] && reg_QA[15]) || (!exe_opcode[15] && reg_QA[31]))) begin
                         FAsign <= 1'b1;
@@ -1242,11 +1242,11 @@ module TG68K_ALU #(
     
     always @(posedge clk) begin
         if (clkena_lw) begin
-            if (micro_state != div_end2) begin
+            if (micro_state != `div_end2) begin
                 V_Flag <= set_V_Flag;
             end
             signedOP <= divs;
-            if (micro_state == div1) begin
+            if (micro_state == `div1) begin
                 nozero <= 1'b0;
                 if (divs && dividend[63]) begin
                     OP1_sign <= 1'b1;
@@ -1259,7 +1259,7 @@ module TG68K_ALU #(
                 div_reg <= div_quot;
                 nozero <= !div_bit | nozero;
             end
-            if (micro_state == div2) begin
+            if (micro_state == `div2) begin
                 div_neg <= signedOP & (OP2out[31] ^ OP1_sign);
                 if (DIV_Mode == 0) begin
                     div_over[32:16] <= ({1'b0, div_reg[47:32]}) - ({1'b0, OP2out[15:0]});
