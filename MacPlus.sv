@@ -481,6 +481,7 @@ assign      cpuFC[0]      = is68000 ? fx68_fc0 : tg68_fc0;
 assign      cpuFC[1]      = is68000 ? fx68_fc1 : tg68_fc1;
 assign      cpuFC[2]      = is68000 ? fx68_fc2 : tg68_fc2;
 assign      cpuAddr[23:1] = is68000 ? fx68_a : tg68_a[23:1];
+assign      cpuAddr[0]    = 1'b0;  // 68000 addresses words, LSB always 0
 assign      cpuDataOut    = is68000 ? fx68_dout : tg68_dout;
 
 wire        fx68_rw;
@@ -511,7 +512,7 @@ assign fx68_fc1 = 1'b0;
 assign fx68_fc2 = 1'b0;
 assign fx68_dout = 16'h0000;
 assign fx68_a = 23'h0;
-assign fx68_reset_n = 1'b0;
+assign fx68_reset_n = 1'b1;  // Inactive (not used)
 
 /*
 fx68k fx68k (
@@ -570,7 +571,7 @@ tg68k tg68k (
 	.reset      ( !_cpuReset ),
 	.phi1       ( cpu_en_p  ),
 	.phi2       ( cpu_en_n  ),
-	.cpu        ( {status_cpu[1], |status_cpu} ),
+	.cpu        ( 2'b11 ),  // Force 68020 mode (00=68000, 01=68010, 11=68020)
 
 	.dtack_n    ( _cpuDTACK  ),
 	.rw_n       ( tg68_rw    ),
@@ -582,8 +583,8 @@ tg68k tg68k (
 
 	.E          (  ),
 	.E_div      ( status_turbo ),
-	.E_PosClkEn ( tg68_E_falling ),
-	.E_NegClkEn ( tg68_E_rising  ),
+	.E_PosClkEn ( tg68_E_rising  ),  // Pos = rising edge
+	.E_NegClkEn ( tg68_E_falling ),  // Neg = falling edge
 	.vma_n      ( tg68_vma_n ),
 	.vpa_n      ( _cpuVPA ),
 
