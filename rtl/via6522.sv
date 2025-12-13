@@ -5,7 +5,8 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Description: This module implements the 6522 VIA chip.
 //              A LOT OF REVERSE ENGINEERING has been done to make this module
-//              as accurate as it is now. Thanks to gyurco for ironing out some
+//              as accurate as it is now.
+//              Thanks to gyurco for ironing out some
 //              differences that were left unnoticed.
 ///////////////////////////////////////////////////////////////////////////////
 // License:     GPL 3.0 - Free to use, distribute and change to your own needs.
@@ -21,6 +22,7 @@ module via6522 (
     input  wire [3:0]  addr,
     input  wire        wen,
     input  wire        ren,
+ 
     input  wire [7:0]  data_in,
     output reg  [7:0]  data_out,
 
@@ -36,6 +38,7 @@ module via6522 (
     input  wire [7:0]  port_b_i,
 
     // handshake pins
+    
     input  wire        ca1_i,
 
     output wire        ca2_o,
@@ -46,13 +49,13 @@ module via6522 (
     input  wire        cb1_i,
     output wire        cb1_t,
     
+  
     output wire        cb2_o,
     input  wire        cb2_i,
     output wire        cb2_t,
 
     output wire        irq
 );
-
     localparam [15:0] latch_reset_pattern = 16'h5550;
 
     // PIO signals (replaces record type)
@@ -60,7 +63,6 @@ module via6522 (
     reg [7:0] pio_i_ddra = 8'h00;
     reg [7:0] pio_i_prb  = 8'h00;
     reg [7:0] pio_i_ddrb = 8'h00;
-    
     reg [7:0] port_a_c = 8'h00;
     reg [7:0] port_b_c = 8'h00;
     
@@ -68,14 +70,12 @@ module via6522 (
     reg [6:0] irq_flags  = 7'h00;
     reg [6:0] irq_events = 7'h00;
     reg       irq_out;
-    
     reg [15:0] timer_a_latch = latch_reset_pattern;
     reg [15:0] timer_b_latch = latch_reset_pattern;
     reg [15:0] timer_a_count = latch_reset_pattern;
     reg [15:0] timer_b_count = latch_reset_pattern;
     reg        timer_a_out;
     reg        timer_b_tick;
-                         
     reg [7:0] acr = 8'h00;
     reg [7:0] pcr = 8'h00;
     reg [7:0] shift_reg = 8'h00;
@@ -90,11 +90,13 @@ module via6522 (
     // Aliases for irq_events
     wire ca2_event     = irq_events[0];
     wire ca1_event     = irq_events[1];
-    wire serial_event  = irq_events[2];
+    
+    // FIXED: Removed assignments here to prevent multiple drivers
+    wire serial_event;  
     wire cb2_event     = irq_events[3];
     wire cb1_event     = irq_events[4];
-    wire timer_b_event = irq_events[5];
-    wire timer_a_event = irq_events[6];
+    wire timer_b_event;
+    wire timer_a_event;
 
     // Aliases for irq_flags
     wire ca2_flag     = irq_flags[0];
@@ -114,20 +116,17 @@ module via6522 (
     wire [2:0] shift_mode_control    = acr[4:2];
     wire       pb_latch_en           = acr[1];
     wire       pa_latch_en           = acr[0];
-    
     // Aliases for PCR bits
     wire       cb2_is_output         = pcr[7];
     wire       cb2_edge_select       = pcr[6];
     wire       cb2_no_irq_clr        = pcr[5];
     wire [1:0] cb2_out_mode          = pcr[6:5];
     wire       cb1_edge_select       = pcr[4];
-    
     wire       ca2_is_output         = pcr[3];
     wire       ca2_edge_select       = pcr[2];
     wire       ca2_no_irq_clr        = pcr[1];
     wire [1:0] ca2_out_mode          = pcr[2:1];
     wire       ca1_edge_select       = pcr[0];
-    
     reg [7:0] ira = 8'h00;
     reg [7:0] irb = 8'h00;
 
@@ -152,7 +151,6 @@ module via6522 (
 
     // Assignments
     assign irq = irq_out;
-    
     always @(*) begin
         write_t1c_l = ((addr == 4'h4 || addr == 4'h6) && wen && falling);
         write_t1c_h = (addr == 4'h5 && wen && falling);
@@ -164,10 +162,14 @@ module via6522 (
         irq_events[0] = (ca2_c ^ ca2_d) & (ca2_d ^ ca2_edge_select);
         irq_events[4] = (cb1_c ^ cb1_d) & (cb1_d ^ cb1_edge_select);
         irq_events[3] = (cb2_c ^ cb2_d) & (cb2_d ^ cb2_edge_select);
+        
+        // FIXED: Added assignments here to drive irq_events from the wires
+        irq_events[2] = serial_event;
+        irq_events[5] = timer_b_event;
+        irq_events[6] = timer_a_event;
     end
 
     assign ca2_t = ca2_is_output;
-    
     always @(*) begin
         cb2_t_int = serport_en ? shift_dir : cb2_is_output;
         cb2_o_int = serport_en ? ser_cb2_o : hs_cb2_o;
@@ -178,14 +180,20 @@ module via6522 (
     assign cb2_t = cb2_t_int;
     assign cb2_o = cb2_o_int;
 
-    assign ca2_o = (ca2_out_mode == 2'b00) ? ca2_handshake_o :
-                   (ca2_out_mode == 2'b01) ? ca2_pulse_o :
-                   (ca2_out_mode == 2'b10) ? 1'b0 : 1'b1;
+    assign ca2_o = (ca2_out_mode == 2'b00) ?
+                   ca2_handshake_o :
+                   (ca2_out_mode == 2'b01) ?
+                   ca2_pulse_o :
+                   (ca2_out_mode == 2'b10) ?
+                   1'b0 : 1'b1;
         
     always @(*) begin
-        hs_cb2_o = (cb2_out_mode == 2'b00) ? cb2_handshake_o :
-                   (cb2_out_mode == 2'b01) ? cb2_pulse_o :
-                   (cb2_out_mode == 2'b10) ? 1'b0 : 1'b1;
+        hs_cb2_o = (cb2_out_mode == 2'b00) ?
+                   cb2_handshake_o :
+                   (cb2_out_mode == 2'b01) ?
+                   cb2_pulse_o :
+                   (cb2_out_mode == 2'b10) ?
+                   1'b0 : 1'b1;
     end
 
     always @(*) begin
@@ -223,11 +231,9 @@ module via6522 (
         ca2_d <= ca2_c;
         cb1_d <= cb1_c;
         cb2_d <= cb2_c;
-
         // input registers
         port_a_c <= port_a_i;
         port_b_c <= port_b_i;
-
         // input latch emulation
         if (pa_latch_en == 1'b0 || ca1_event == 1'b1) begin
             ira <= port_a_c;
@@ -268,7 +274,8 @@ module via6522 (
         end
 
         // Interrupt logic
-        irq_flags <= irq_flags | irq_events;
+        irq_flags <= irq_flags |
+                     irq_events;
 
         // Writes
         if (wen == 1'b1 && falling == 1'b1) begin
@@ -341,7 +348,8 @@ module via6522 (
                     
                 4'hE: begin // IER
                     if (data_in[7] == 1'b1) begin // set
-                        irq_mask <= irq_mask | data_in[6:0];
+                        irq_mask <= irq_mask |
+                                    data_in[6:0];
                     end else begin // clear
                         irq_mask <= irq_mask & ~data_in[6:0];
                     end
@@ -419,6 +427,7 @@ module via6522 (
         if (ren == 1'b1 && falling == 1'b1) begin
             case (addr)
                 4'h0: begin // ORB
+ 
                     if (cb2_no_irq_clr == 1'b0) begin
                         irq_flags[3] <= 1'b0;
                     end
@@ -427,6 +436,7 @@ module via6522 (
                                             
                 4'h1: begin // ORA
                     if (ca2_no_irq_clr == 1'b0) begin
+             
                         irq_flags[0] <= 1'b0;
                     end
                     irq_flags[1] <= 1'b0;
@@ -475,12 +485,10 @@ module via6522 (
     assign port_a_t = pio_i_ddra;
     assign port_b_t[6:0] = pio_i_ddrb[6:0];
     assign port_b_t[7] = pio_i_ddrb[7] | tmr_a_output_en;
-
     // Timer A
     reg        timer_a_reload = 1'b0;
     reg        timer_a_toggle = 1'b1;
     reg        timer_a_may_interrupt = 1'b0;
-
     always @(posedge clock) begin
         if (falling == 1'b1) begin
             // always count, or load
@@ -532,12 +540,10 @@ module via6522 (
     reg        timer_b_timeout = 1'b0;
     reg        pb6_c = 1'b0;
     reg        pb6_d = 1'b0;
-
     always @(posedge clock) begin
         reg timer_b_decrement;
         
         timer_b_decrement = 1'b0;
-
         if (rising == 1'b1) begin
             pb6_c <= port_b_i[6];
             pb6_d <= pb6_c;
@@ -558,6 +564,7 @@ module via6522 (
             if (timer_b_decrement == 1'b1) begin
                 if (timer_b_count == 16'h0000) begin
                     if (timer_b_oneshot_trig == 1'b1) begin
+                        
                         timer_b_oneshot_trig <= 1'b0;
                         timer_b_timeout <= 1'b1;
                     end
@@ -565,6 +572,7 @@ module via6522 (
                 if (timer_b_count[7:0] == 8'h00) begin
                     case (shift_mode_control)
                         3'b001, 3'b101, 3'b100: begin
+          
                             timer_b_reload_lo <= 1'b1;
                             timer_b_tick <= 1'b1;
                         end
@@ -572,6 +580,7 @@ module via6522 (
                         end
                     endcase
                 end
+            
                 timer_b_count <= timer_b_count - 16'h0001;
             end
             if (timer_b_reload_lo == 1'b1) begin
@@ -593,7 +602,6 @@ module via6522 (
     end
 
     assign timer_b_event = rising & timer_b_timeout;
-
     // Serial port
     reg        trigger_serial;
     reg        shift_clock_d = 1'b1;
@@ -632,7 +640,6 @@ module via6522 (
 
     always @(posedge clock) begin
         ser_cb2_c <= cb2_i;
-
         if (rising == 1'b1) begin
             if (shift_active == 1'b0) begin
                 if (shift_mode_control == 3'b000) begin
@@ -660,13 +667,15 @@ module via6522 (
     end
 
     always @(*) begin
-        cb1_t_int = (shift_clk_sel == 2'b11) ? 1'b0 : serport_en;
+        cb1_t_int = (shift_clk_sel == 2'b11) ?
+                    1'b0 : serport_en;
         cb1_o_int = shift_clock_d;
         ser_cb2_o = shift_reg[7];
     end
 
     always @(*) begin
-        serport_en = shift_dir | shift_clk_sel[1] | shift_clk_sel[0];
+        serport_en = shift_dir |
+                     shift_clk_sel[1] | shift_clk_sel[0];
         trigger_serial = ((ren == 1'b1 || wen == 1'b1) && addr == 4'hA);
         shift_tick_r = ~shift_clock_d & shift_clock;
         shift_tick_f = shift_clock_d & ~shift_clock;
@@ -688,7 +697,6 @@ module via6522 (
 
     // tell people that we're ready!
     assign serial_event = shift_tick_r & ~shift_active & rising & serport_en;
-
     always @(posedge clock) begin
         if (falling == 1'b1) begin
             if (shift_active == 1'b0 && shift_mode_control != 3'b000) begin
@@ -698,7 +706,8 @@ module via6522 (
                 end
             end else begin // we're active
                 if (shift_clk_sel == 2'b00) begin
-                    shift_active <= shift_dir; // when '1' we're active, but for mode 000 we go inactive.
+                    shift_active <= shift_dir;
+                    // when '1' we're active, but for mode 000 we go inactive.
                 end else if (shift_pulse == 1'b1 && shift_clock == 1'b1) begin
                     if (bit_cnt == 3'd0) begin
                         shift_active <= 1'b0;
