@@ -86,13 +86,6 @@ module TG68KdotC_Kernel #(
         end
     end 
     
-    // Initialize regfile to zeros
-    integer init_i;
-    initial begin
-        for (init_i = 0; init_i < 16; init_i = init_i + 1) begin
-            regfile[init_i] = 32'h00000000;
-        end
-    end 
     reg  [3:0]  RDindex_A_bits; // Pointer bits
     reg  [3:0]  RDindex_B_bits;
     integer     RDindex_A;      // Integer index
@@ -1920,7 +1913,7 @@ module TG68KdotC_Kernel #(
                 set[`addsub] = 1'b1;
                 set[`alu_exec] = 1'b1;
                 set[`opcCHK2] = 1'b1;
-                set(opcEXTB) <= exec(opcEXTB);
+                set[`opcEXTB] = exec[`opcEXTB];
                 if (sndOPC[11] == 1'b1) begin
                     setstate =2'b01;
                     next_micro_state = `chk23;
@@ -2023,7 +2016,7 @@ module TG68KdotC_Kernel #(
                 set[`Regwrena] = 1'b1;
             end
             `movem1: begin //movem
-                if (last_data_read[15:0]/=X"0000") begin
+                if (last_data_read[15:0] != 16'h0000) begin
                     setstate =2'b01;
                     if (opcode[5:3] == 3'b100) begin
                         set[`mem_addsub] = 1'b1;
@@ -2050,7 +2043,7 @@ module TG68KdotC_Kernel #(
                 end
             end
             `andi: begin //andi
-                if (opcode[5:4]/=='00') begin
+                if (opcode[5:4] != 2'b00) begin
                     setnextpass = 1'b1;
                 end
             end
@@ -2240,7 +2233,7 @@ module TG68KdotC_Kernel #(
                 //					next_micro_state <= nop;
                 //--					set(update_FC) <= '1';
                 // paste and copy form TH	---------
-                when rte3 =>; // RTE
+            `rte3: begin // RTE
                 setstate = 2'b01; // idle state to wait
                 // for input data to
                 // arrive
@@ -2255,10 +2248,10 @@ module TG68KdotC_Kernel #(
                     set[`postadd] = 1'b1;
                     setstackaddr = 1'b1;
                     next_micro_state = `rte5;
-                    else;
+                end else begin
                     datatype = 2'b01;
                     next_micro_state = `nop;
-                    end if;
+                end
             end
             `rte5: begin // RTE
                 next_micro_state = `nop;
@@ -2274,15 +2267,15 @@ module TG68KdotC_Kernel #(
             `movec1: begin // MOVEC
                 set[`briefext] = 1'b1;
                 set_writePCbig = 1'b1;
-                IF (brief[11:0]=12'h000 OR brief[11:0]=12'h001 OR brief[11:0]=12'h800 OR brief[11:0]=12'h801) OR;
-                (cpu[1] == 1'b1 AND (brief[11:0]=12'h002 OR brief[11:0]=12'h802 OR brief[11:0]=12'h803 OR brief[11:0]=12'h804)) THEN;
-                if (opcode[0] == 1'b0) begin
+                if ((brief[11:0]==12'h000 || brief[11:0]==12'h001 || brief[11:0]==12'h800 || brief[11:0]==12'h801) ||
+                    (cpu[1] == 1'b1 && (brief[11:0]==12'h002 || brief[11:0]==12'h802 || brief[11:0]==12'h803 || brief[11:0]==12'h804))) begin
+                    if (opcode[0] == 1'b0) begin
                     set[`Regwrena] = 1'b1;
                 end
                 //					ELSIF brief(11 downto 0)=X"800"OR brief(11 downto 0)=X"001" OR brief(11 downto 0)=X"000" THEN
                 //						trap_addr_error <= '1';
                 //						trapmake <= '1';
-                end else begin
+            end else begin
                 trap_illegal = 1'b1;
                 trapmake = 1'b1;
                 end
@@ -2433,7 +2426,7 @@ module TG68KdotC_Kernel #(
                 set[`opcDIVU] = 1'b1;
             end
             `rota1: begin
-                if (OP2out[5:0]/=='000000') begin
+                if (OP2out[5:0] != 6'b000000) begin
                     set_rot_cnt = OP2out[5:0];
                 end else begin
                     set_exec[`rot_nop] = 1'b1;
@@ -2442,7 +2435,7 @@ module TG68KdotC_Kernel #(
             `bf1: begin
                 setstate =2'b10;
             end
-            `OTHERS: begin
+            default: begin
             end
         endcase
     end
@@ -2479,7 +2472,7 @@ module TG68KdotC_Kernel #(
         case (brief[11:0])
             12'h000: movec_data = {29'b0, SFC};
             12'h001: movec_data = {29'b0, DFC};
-            12'h002: movec_data = {28'b0, CACR & 4'b0011};
+            12'h002: movec_data = {28'b0, CACR[3:0]};
             12'h801: movec_data = VBR;
             default: ;
         endcase
