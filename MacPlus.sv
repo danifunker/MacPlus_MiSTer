@@ -583,8 +583,8 @@ tg68k tg68k (
 
 	.E          (  ),
 	.E_div      ( status_turbo ),
-	.E_PosClkEn ( tg68_E_rising  ),  // Pos = rising edge
-	.E_NegClkEn ( tg68_E_falling ),  // Neg = falling edge
+	.E_PosClkEn ( tg68_E_falling ),  // Match fx68k: PosClkEn -> E_falling wire
+	.E_NegClkEn ( tg68_E_rising  ),  // Match fx68k: NegClkEn -> E_rising wire
 	.vma_n      ( tg68_vma_n ),
 	.vpa_n      ( _cpuVPA ),
 
