@@ -571,7 +571,7 @@ tg68k tg68k (
 	.reset      ( !_cpuReset ),
 	.phi1       ( cpu_en_p  ),
 	.phi2       ( cpu_en_n  ),
-	.cpu        ( 2'b11 ),  // Force 68020 mode (00=68000, 01=68010, 11=68020)
+	.cpu        ( 2'b00 ),  // Force 68000 mode - Mac Plus is 68000 hardware
 
 	.dtack_n    ( _cpuDTACK  ),
 	.rw_n       ( tg68_rw    ),

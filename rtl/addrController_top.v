@@ -142,7 +142,8 @@ module addrController_top(
 	wire extraRamRead = sndReadAck;
 	assign _ramOE = ~((videoBusControl && videoControlActive) || (extraRamRead) ||
 						(cpuBusControl && selectRAM && _cpuRW));
-	assign _ramWE = ~(cpuBusControl && selectRAM && !_cpuRW);
+	// Gate _ramWE with UDS/LDS to ensure write only when byte strobes valid (TG68K compatibility)
+	assign _ramWE = ~(cpuBusControl && selectRAM && !_cpuRW && (!_cpuUDS || !_cpuLDS));
 	
 	assign _memoryUDS = cpuBusControl ? _cpuUDS : 1'b0;
 	assign _memoryLDS = cpuBusControl ? _cpuLDS : 1'b0;
