@@ -441,24 +441,6 @@ module TG68KdotC_Kernel #(
 
     // Write Reg
     always_comb begin
-        regin = ALUout;
-        if (exec[save_memaddr] == 1'b1) begin
-            regin = memaddr;
-        end else if (exec[get_ea_now] == 1'b1 && ea_only == 1'b1) begin
-            regin = memaddr_a;
-        end else if (exec[from_USP] == 1'b1) begin
-            regin = USP;
-        end else if (exec[movec_rd] == 1'b1) begin
-            regin = movec_data;
-        end
-
-        if (Bwrena == 1'b1) begin
-            regin[15:8] = reg_QA[15:8];
-        end
-        if (Lwrena == 1'b0) begin
-            regin[31:16] = reg_QA[31:16];
-        end
-
         Bwrena = 1'b0;
         Wwrena = 1'b0;
         Lwrena = 1'b0;
@@ -482,6 +464,24 @@ module TG68KdotC_Kernel #(
                     Lwrena = 1'b1;
                 end
             endcase
+        end
+
+        regin = ALUout;
+        if (exec[save_memaddr] == 1'b1) begin
+            regin = memaddr;
+        end else if (exec[get_ea_now] == 1'b1 && ea_only == 1'b1) begin
+            regin = memaddr_a;
+        end else if (exec[from_USP] == 1'b1) begin
+            regin = USP;
+        end else if (exec[movec_rd] == 1'b1) begin
+            regin = movec_data;
+        end
+
+        if (Bwrena == 1'b1) begin
+            regin[15:8] = reg_QA[15:8];
+        end
+        if (Lwrena == 1'b0) begin
+            regin[31:16] = reg_QA[31:16];
         end
     end
 
