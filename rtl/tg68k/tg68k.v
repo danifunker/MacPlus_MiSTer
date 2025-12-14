@@ -32,7 +32,7 @@ module tg68k (
 	input berr,
 	input [15:0] din,
 	output [15:0] dout,
-	output reg [31:0] addr
+	output [31:0] addr
 );
 
 wire  [1:0] tg68_busstate;
@@ -60,6 +60,7 @@ assign      as_n = as_n_r;
 assign      uds_n = uds_n_r;
 assign      lds_n = lds_n_r;
 assign      rw_n = rw_r;
+assign      addr = tg68_addr;
 
 reg   [2:0] s_state;
 
@@ -71,8 +72,6 @@ always @(posedge clk) begin
 		uds_n_r <= 1;
 		lds_n_r <= 1;
 	end else begin
-		addr <= tg68_addr;
-
 		if (phi1) begin
 
 			if (s_state != 4) s_state <= s_state + 1'd1;
