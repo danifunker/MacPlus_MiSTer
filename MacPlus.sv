@@ -468,7 +468,7 @@ assign      _cpuDTACK = ~(!_cpuAS && cpuAddr[23:21] != 3'b111) | (status_turbo &
 wire        cpu_en_p      = status_turbo ? clk16_en_p : clk8_en_p;
 wire        cpu_en_n      = status_turbo ? clk16_en_n : clk8_en_n;
 
-wire        is68000       = status_cpu == 0;
+wire        is68000       = 1'b0;  // Force TG68K only
 assign      _cpuReset_o   = is68000 ? fx68_reset_n : tg68_reset_n;
 assign      _cpuRW        = is68000 ? fx68_rw : tg68_rw;
 assign      _cpuAS        = is68000 ? fx68_as_n : tg68_as_n;
@@ -481,6 +481,7 @@ assign      cpuFC[0]      = is68000 ? fx68_fc0 : tg68_fc0;
 assign      cpuFC[1]      = is68000 ? fx68_fc1 : tg68_fc1;
 assign      cpuFC[2]      = is68000 ? fx68_fc2 : tg68_fc2;
 assign      cpuAddr[23:1] = is68000 ? fx68_a : tg68_a[23:1];
+assign      cpuAddr[0]    = 1'b0;  // 68000 addresses words, LSB always 0
 assign      cpuDataOut    = is68000 ? fx68_dout : tg68_dout;
 
 wire        fx68_rw;
@@ -497,6 +498,23 @@ wire [15:0] fx68_dout;
 wire [23:1] fx68_a;
 wire        fx68_reset_n;
 
+// fx68k temporarily disabled - using TG68K only
+// Tie off unused fx68k signals to safe defaults
+assign fx68_rw = 1'b1;
+assign fx68_as_n = 1'b1;
+assign fx68_uds_n = 1'b1;
+assign fx68_lds_n = 1'b1;
+assign fx68_E_falling = 1'b0;
+assign fx68_E_rising = 1'b0;
+assign fx68_vma_n = 1'b1;
+assign fx68_fc0 = 1'b0;
+assign fx68_fc1 = 1'b0;
+assign fx68_fc2 = 1'b0;
+assign fx68_dout = 16'h0000;
+assign fx68_a = 23'h0;
+assign fx68_reset_n = 1'b1;  // Inactive
+
+/*
 fx68k fx68k (
 	.clk        ( clk_sys ),
 	.extReset   ( !_cpuReset ),
@@ -532,6 +550,7 @@ fx68k fx68k (
 	.oEdb       ( fx68_dout ),
 	.eab        ( fx68_a )
 );
+*/
 
 wire        tg68_rw;
 wire        tg68_as_n;
@@ -552,7 +571,7 @@ tg68k tg68k (
 	.reset      ( !_cpuReset ),
 	.phi1       ( cpu_en_p  ),
 	.phi2       ( cpu_en_n  ),
-	.cpu        ( {status_cpu[1], |status_cpu} ),
+	.cpu        ( 2'b11 ),  // Force 68020 mode (00=68000, 01=68010, 11=68020)
 
 	.dtack_n    ( _cpuDTACK  ),
 	.rw_n       ( tg68_rw    ),
