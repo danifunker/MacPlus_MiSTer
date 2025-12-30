@@ -37,7 +37,7 @@ generic(
 	port(clk						: in std_logic;
 		Reset						: in std_logic;
 		clkena_lw				: in std_logic:='1';
-		CPU						: in std_logic_vector(1 downto 0):="00";  -- 00->68000  01->68010  11->68020(only some parts - yet)
+		CPU						: in std_logic_vector(1 downto 0):="00";  -- 00->68000  01->68010  10->68020  11->68030
 		execOPC					: in bit;
 		decodeOPC				: in bit;
 		exe_condition			: in std_logic;
@@ -311,13 +311,19 @@ PROCESS (OP1out, OP2out, execOPC, Flags, long_start, movem_presub, exe_datatype,
 		ELSIF execOPC='0' AND exec(OP2out_one)='0' AND exec(get_bfoffset)='0'THEN
 			IF long_start='0' AND exe_datatype="00" AND exec(use_SP)='0' THEN
 				addsub_b <= "00000000000000000000000000000001";
-			ELSIF long_start='0' AND exe_datatype="10" AND (exec(presub) OR exec(postadd) OR movem_presub)='1' THEN
-				IF exec(movem_action)='1' THEN
-					addsub_b <= "00000000000000000000000000000110";
-				ELSE
-					addsub_b <= "00000000000000000000000000000100";
-				END IF;
-			ELSE 
+				-- BUG #144 FIX: Added exec(pmmu_addr_inc) for PMOVE CRP/SRP 64-bit +4 address increment
+				-- pmmu_addr_inc avoids register write-back side effect that postadd would cause
+				ELSIF long_start='0' AND exe_datatype="10" AND (exec(presub) OR exec(postadd) OR movem_presub OR exec(pmmu_addr_inc))='1' THEN
+					IF exec(movem_action)='1' THEN
+						addsub_b <= "00000000000000000000000000000110";
+					ELSIF exec(pmmu_addr_inc)='1' THEN
+						addsub_b <= "00000000000000000000000000000100";
+					ELSIF exec(pmmu_dbl)='1' AND (exec(presub) OR exec(postadd) OR movem_presub)='1' THEN
+						addsub_b <= "00000000000000000000000000001000";
+					ELSE
+						addsub_b <= "00000000000000000000000000000100";
+					END IF;
+			ELSE
 				addsub_b <= "00000000000000000000000000000010";
 			END IF;
 		ELSE	
