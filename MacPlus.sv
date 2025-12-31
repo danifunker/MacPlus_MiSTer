@@ -494,6 +494,7 @@ wire        fx68_vma_n;
 wire        fx68_fc0;
 wire        fx68_fc1;
 wire        fx68_fc2;
+wire        fx68_fc3;
 wire [15:0] fx68_dout;
 wire [23:1] fx68_a;
 wire        fx68_reset_n;
