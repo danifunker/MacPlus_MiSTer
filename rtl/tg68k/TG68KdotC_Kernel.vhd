@@ -4594,8 +4594,8 @@ PROCESS (clk, cpu, OP1out, OP2out, opcode, exe_condition, nextpass, micro_state,
 					ELSE
 						-- Valid EA mode for cpRESTORE
 						IF SVmode='1' THEN
-							IF opcode(11 downto 9)="000" THEN  -- FPU coprocessor
-								IF fline_is_fpu='1' AND FPU_Enable=1 THEN
+							IF opcode(11 downto 9)="001" THEN  -- FPU coprocessor (ID=001)
+								IF FPU_Enable=1 THEN
 									-- Route to FPU FRESTORE handler
 									set(get_2ndOPC) <= '1';
 									next_micro_state <= fpu1;
@@ -4614,8 +4614,8 @@ PROCESS (clk, cpu, OP1out, OP2out, opcode, exe_condition, nextpass, micro_state,
 					END IF;
 				ELSE
 					-- Unrecognized F-line instruction (cpGEN, cpBcc, etc.)
-					-- Check if this is an FPU instruction
-					IF fline_is_fpu='1' AND FPU_Enable=1 THEN
+					-- Check if this is an FPU instruction (coprocessor ID = 001)
+					IF opcode(11 downto 9)="001" AND FPU_Enable=1 THEN
 						-- Route to FPU handler
 						IF decodeOPC='1' THEN
 							set(get_2ndOPC) <= '1';
