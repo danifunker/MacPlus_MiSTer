@@ -791,7 +791,7 @@ BEGIN
   end generate FPU_GEN;
 
   -- FPU enable signal control process
-  process(clk, nReset, micro_state)
+  process(clk, nReset, micro_state, opcode, clkena_in)
   begin
     if nReset = '0' then
       fpu_enable_sig <= '0';  -- Initialize FPU enable signal to inactive
