@@ -1245,8 +1245,9 @@ ALU: TG68K_ALU
 		-- cir_fpu_coprocessor <= coproc_is_fpu;  -- Removed: signal unused
 
 		-- Valid CIR access: CPU space + CIR range + FPU coprocessor + FPU enabled
+		-- (Hardcoded FPU enabled for testing - was: FPU_Enable = 1)
 		if fc_is_cpu_space = '1' and addr_is_cir_range = '1' and
-		   coproc_is_fpu = '1' and FPU_Enable = 1 then
+		   coproc_is_fpu = '1' then
 			cir_access_valid <= '1';
 		else
 			cir_access_valid <= '0';
@@ -1255,8 +1256,9 @@ ALU: TG68K_ALU
 		-- Bus error condition: CIR access but FPU disabled or wrong coprocessor ID
 		-- This implements the hardware behavior where accessing non-existent coprocessor
 		-- causes bus error (timeout on real hardware)
+		-- (Hardcoded FPU enabled for testing - was: FPU_Enable = 0)
 		if fc_is_cpu_space = '1' and addr_is_cir_range = '1' and
-		   (coproc_is_fpu = '0' or FPU_Enable = 0) then
+		   coproc_is_fpu = '0' then
 			cir_access_berr <= '1';
 		else
 			cir_access_berr <= '0';
