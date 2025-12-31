@@ -791,21 +791,21 @@ BEGIN
   end generate FPU_GEN;
 
   -- FPU enable signal control process
-  process(clk, nReset, micro_state, opcode, clkena_in)
+  process(clk, nReset)
   begin
     if nReset = '0' then
       fpu_enable_sig <= '0';  -- Initialize FPU enable signal to inactive
     elsif rising_edge(clk) then
       if clkena_in = '1' then
-        -- Enable FPU ONLY during FPU microcode states AND F-line instructions
-        -- CRITICAL FIX: Don't enable FPU for non-F-line instructions
-        if (micro_state = fpu1 or micro_state = fpu2 or micro_state = fpu_wait or
-            micro_state = fpu_done or micro_state = fpu_fmovem or micro_state = fpu_fmovem_cr or
-            micro_state = fpu_fdbcc) AND
+        -- Latch FPU enable high when CPU is about to enter an FPU state for a valid F-line instruction.
+        -- Hold it high until the FPU signals completion.
+        if (next_micro_state = fpu1 or next_micro_state = fpu2 or next_micro_state = fpu_wait or
+            next_micro_state = fpu_done or next_micro_state = fpu_fmovem or next_micro_state = fpu_fmovem_cr or
+            next_micro_state = fpu_fdbcc) AND
            (opcode(15 downto 12) = "1111" AND
             (opcode(11 downto 9) = "001" OR opcode(8 downto 6) = "000" OR opcode(8 downto 6) = "100")) then
           fpu_enable_sig <= '1';
-        else
+        elsif fpu_complete = '1' then
           fpu_enable_sig <= '0';
         end if;
       end if;
