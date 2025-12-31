@@ -221,7 +221,7 @@ localparam CONF_STR = {
 	"-;",
 	"O9,Model,Plus,SE;",
 	"O5,Speed,8MHz,16MHz;",
-	"ODE,CPU,68000,68010,68020;",
+	"ODE,CPU,68000,68010,68020,68030;",
 	"O4,Memory,1MB,4MB;",
 	"-;",
 	//"OA,Serial,Off,On;",
@@ -480,6 +480,7 @@ assign      _cpuVMA       = is68000 ? fx68_vma_n : tg68_vma_n;
 assign      cpuFC[0]      = is68000 ? fx68_fc0 : tg68_fc0;
 assign      cpuFC[1]      = is68000 ? fx68_fc1 : tg68_fc1;
 assign      cpuFC[2]      = is68000 ? fx68_fc2 : tg68_fc2;
+assign      cpuFC[3]      = is68000 ? fx68_fc3 : tg68_fc3;
 assign      cpuAddr[23:1] = is68000 ? fx68_a : tg68_a[23:1];
 assign      cpuDataOut    = is68000 ? fx68_dout : tg68_dout;
 
@@ -552,14 +553,14 @@ tg68k tg68k (
 	.reset      ( !_cpuReset ),
 	.phi1       ( cpu_en_p  ),
 	.phi2       ( cpu_en_n  ),
-	.cpu        ( {status_cpu[1], |status_cpu} ),
+	.cpu        ( status_cpu),
 
 	.dtack_n    ( _cpuDTACK  ),
 	.rw_n       ( tg68_rw    ),
 	.as_n       ( tg68_as_n  ),
 	.uds_n      ( tg68_uds_n ),
 	.lds_n      ( tg68_lds_n ),
-	.fc         ( { tg68_fc2, tg68_fc1, tg68_fc0 } ),
+	.fc         ( { tg68_fc3 ,tg68_fc2, tg68_fc1, tg68_fc0 } ),
 	.reset_n    ( tg68_reset_n ),
 
 	.E          (  ),
