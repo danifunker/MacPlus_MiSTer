@@ -418,7 +418,7 @@ wire clk16_en_p, clk16_en_n;
 wire _cpuVMA, _cpuVPA, _cpuDTACK;
 wire E_rising, E_falling;
 wire [2:0] _cpuIPL;
-wire [2:0] cpuFC;
+wire [3:0] cpuFC;
 wire [7:0] cpuAddrHi;
 wire [23:0] cpuAddr;
 wire [15:0] cpuDataOut;
