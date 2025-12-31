@@ -94,31 +94,28 @@ architecture rtl of TG68K_FPU_PackedDecimal is
     signal result_sign : std_logic;
     signal exp_sign : std_logic;
     
-    -- BCD arithmetic functions
-    function bcd_to_binary(bcd : std_logic_vector) return integer is
-        variable result : integer := 0;
-        variable digit : integer;
+    -- BCD arithmetic functions (fixed-width for GHDL synthesis)
+    function bcd_to_binary(bcd : std_logic_vector(11 downto 0)) return integer is
+        variable d0, d1, d2 : integer;
     begin
-        for i in 0 to (bcd'length/4)-1 loop
-            digit := to_integer(unsigned(bcd(i*4+3 downto i*4)));
-            if digit > 9 then
-                return -1;  -- Invalid BCD
-            end if;
-            result := result * 10 + digit;
-        end loop;
-        return result;
+        d0 := to_integer(unsigned(bcd(3 downto 0)));
+        d1 := to_integer(unsigned(bcd(7 downto 4)));
+        d2 := to_integer(unsigned(bcd(11 downto 8)));
+        if d0 > 9 or d1 > 9 or d2 > 9 then
+            return -1;
+        end if;
+        return d2 * 100 + d1 * 10 + d0;
     end function;
-    
+
     function binary_to_bcd(value : integer; width : integer) return std_logic_vector is
-        variable result : std_logic_vector(width-1 downto 0) := (others => '0');
+        variable result : std_logic_vector(11 downto 0);
         variable temp : integer := value;
-        variable digit : integer;
     begin
-        for i in 0 to (width/4)-1 loop
-            digit := temp mod 10;
-            result(i*4+3 downto i*4) := std_logic_vector(to_unsigned(digit, 4));
-            temp := temp / 10;
-        end loop;
+        result(3 downto 0) := std_logic_vector(to_unsigned(temp mod 10, 4));
+        temp := temp / 10;
+        result(7 downto 4) := std_logic_vector(to_unsigned(temp mod 10, 4));
+        temp := temp / 10;
+        result(11 downto 8) := std_logic_vector(to_unsigned(temp mod 10, 4));
         return result;
     end function;
     
@@ -227,8 +224,27 @@ begin
                         end if;
                         
                         if cycle_count < 17 then
-                            -- Process one BCD digit per cycle
-                            digit_value := to_integer(unsigned(bcd_digits((16-cycle_count)*4+3 downto (16-cycle_count)*4)));
+                            -- Process one BCD digit per cycle (case for GHDL)
+                            case cycle_count is
+                                when 0  => digit_value := to_integer(unsigned(bcd_digits(67 downto 64)));
+                                when 1  => digit_value := to_integer(unsigned(bcd_digits(63 downto 60)));
+                                when 2  => digit_value := to_integer(unsigned(bcd_digits(59 downto 56)));
+                                when 3  => digit_value := to_integer(unsigned(bcd_digits(55 downto 52)));
+                                when 4  => digit_value := to_integer(unsigned(bcd_digits(51 downto 48)));
+                                when 5  => digit_value := to_integer(unsigned(bcd_digits(47 downto 44)));
+                                when 6  => digit_value := to_integer(unsigned(bcd_digits(43 downto 40)));
+                                when 7  => digit_value := to_integer(unsigned(bcd_digits(39 downto 36)));
+                                when 8  => digit_value := to_integer(unsigned(bcd_digits(35 downto 32)));
+                                when 9  => digit_value := to_integer(unsigned(bcd_digits(31 downto 28)));
+                                when 10 => digit_value := to_integer(unsigned(bcd_digits(27 downto 24)));
+                                when 11 => digit_value := to_integer(unsigned(bcd_digits(23 downto 20)));
+                                when 12 => digit_value := to_integer(unsigned(bcd_digits(19 downto 16)));
+                                when 13 => digit_value := to_integer(unsigned(bcd_digits(15 downto 12)));
+                                when 14 => digit_value := to_integer(unsigned(bcd_digits(11 downto 8)));
+                                when 15 => digit_value := to_integer(unsigned(bcd_digits(7 downto 4)));
+                                when 16 => digit_value := to_integer(unsigned(bcd_digits(3 downto 0)));
+                                when others => digit_value := 0;
+                            end case;
                             -- Multiply current result by 10 and add new digit
                             temp_mantissa := resize(temp_mantissa * 10, 128) + digit_value;
                             cycle_count <= cycle_count + 1;
@@ -265,10 +281,27 @@ begin
                         end if;
                         
                         if cycle_count < 17 then
-                            -- Extract BCD digits using repeated division
-                            -- Simplified: just copy mantissa bits as approximation
-                            bcd_digits(cycle_count*4+3 downto cycle_count*4) <= 
-                                std_logic_vector(temp_mantissa(cycle_count*4+3 downto cycle_count*4) and "1001");
+                            -- Extract BCD digits (case for GHDL)
+                            case cycle_count is
+                                when 0  => bcd_digits(3 downto 0)   <= std_logic_vector(temp_mantissa(3 downto 0) and "1001");
+                                when 1  => bcd_digits(7 downto 4)   <= std_logic_vector(temp_mantissa(7 downto 4) and "1001");
+                                when 2  => bcd_digits(11 downto 8)  <= std_logic_vector(temp_mantissa(11 downto 8) and "1001");
+                                when 3  => bcd_digits(15 downto 12) <= std_logic_vector(temp_mantissa(15 downto 12) and "1001");
+                                when 4  => bcd_digits(19 downto 16) <= std_logic_vector(temp_mantissa(19 downto 16) and "1001");
+                                when 5  => bcd_digits(23 downto 20) <= std_logic_vector(temp_mantissa(23 downto 20) and "1001");
+                                when 6  => bcd_digits(27 downto 24) <= std_logic_vector(temp_mantissa(27 downto 24) and "1001");
+                                when 7  => bcd_digits(31 downto 28) <= std_logic_vector(temp_mantissa(31 downto 28) and "1001");
+                                when 8  => bcd_digits(35 downto 32) <= std_logic_vector(temp_mantissa(35 downto 32) and "1001");
+                                when 9  => bcd_digits(39 downto 36) <= std_logic_vector(temp_mantissa(39 downto 36) and "1001");
+                                when 10 => bcd_digits(43 downto 40) <= std_logic_vector(temp_mantissa(43 downto 40) and "1001");
+                                when 11 => bcd_digits(47 downto 44) <= std_logic_vector(temp_mantissa(47 downto 44) and "1001");
+                                when 12 => bcd_digits(51 downto 48) <= std_logic_vector(temp_mantissa(51 downto 48) and "1001");
+                                when 13 => bcd_digits(55 downto 52) <= std_logic_vector(temp_mantissa(55 downto 52) and "1001");
+                                when 14 => bcd_digits(59 downto 56) <= std_logic_vector(temp_mantissa(59 downto 56) and "1001");
+                                when 15 => bcd_digits(63 downto 60) <= std_logic_vector(temp_mantissa(63 downto 60) and "1001");
+                                when 16 => bcd_digits(67 downto 64) <= std_logic_vector(temp_mantissa(67 downto 64) and "1001");
+                                when others => null;
+                            end case;
                             cycle_count <= cycle_count + 1;
                         else
                             -- Add k-factor to exponent

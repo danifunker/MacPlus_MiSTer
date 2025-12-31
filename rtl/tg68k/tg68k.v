@@ -1,5 +1,6 @@
 /*
- 68000 compatible bus-wrapper for TG68K
+ 68000/68010/68020/68030 compatible bus-wrapper for TG68K
+ With 68030 cache support
  */
 
 module tg68k #(
@@ -34,7 +35,19 @@ module tg68k #(
 	input berr,
 	input [15:0] din,
 	output [15:0] dout,
-	output reg [31:0] addr
+	output reg [31:0] addr,
+
+	// Cache memory interface (directly to SDRAM controller)
+	output cache_req,
+	output [31:0] cache_addr,
+	input [15:0] cache_data,
+	input cache_ack,
+	output cache_burst,
+	output [2:0] cache_burst_len,
+
+	// Cache status
+	output cache_hit,
+	output cache_miss
 );
 
 wire  [1:0] tg68_busstate;
@@ -45,6 +58,63 @@ reg  [15:0] tg68_din_r;
 wire        tg68_uds_n;
 wire        tg68_lds_n;
 wire        tg68_rw;
+wire        skipFetch;
+
+// Cache control signals from kernel
+wire        cache_inv_req;
+wire [1:0]  cache_op_scope;
+wire [1:0]  cache_op_cache;
+wire        cacr_ie;
+wire        cacr_de;
+wire        cacr_ifreeze;
+wire        cacr_dfreeze;
+wire        cacr_ibe;
+wire        cacr_dbe;
+wire        cacr_wa;
+wire [31:0] cache_op_addr;
+
+// PMMU address signals (directly from kernel for future PMMU support)
+wire [31:0] pmmu_addr_log;
+wire [31:0] pmmu_addr_phys;
+wire        pmmu_cache_inhibit;
+
+// 68030 mode detection - only 68030 has integrated cache and PMMU
+// MC68020 uses external MC68851 PMMU (not implemented here)
+wire is_68030 = (cpu == 2'b11);
+
+// Gated PMMU signals - bypass translation for non-68030 modes
+// For 68020/68010/68000: use logical address directly, no cache inhibit
+wire [31:0] pmmu_addr_gated = is_68030 ? pmmu_addr_phys : tg68_addr;
+wire        pmmu_cache_inhibit_gated = is_68030 & pmmu_cache_inhibit;
+
+// Cache is enabled when CPU is 68030 and either I-cache or D-cache enabled
+wire cache_enabled = is_68030 & (cacr_ie | cacr_de);
+
+// Cache interface signals
+wire [31:0] i_cache_data;
+wire        i_cache_hit;
+wire        i_fill_req;
+wire [31:0] i_fill_addr;
+wire        d_cache_hit;
+wire        d_fill_req;
+wire [31:0] d_fill_addr;
+
+// Instruction cache request when fetching (busstate=00) and I-cache enabled (68030 only)
+wire i_cache_req = (tg68_busstate == 2'b00) & is_68030 & cacr_ie;
+
+// Data cache request when reading/writing (busstate=10 or 11) and D-cache enabled (68030 only)
+wire d_cache_req = (tg68_busstate[1]) & is_68030 & cacr_de;
+
+// Cache fill state machine
+reg         cache_fill_active;
+reg [2:0]   cache_fill_count;
+reg [127:0] cache_fill_buffer;
+reg         cache_fill_complete;
+
+// Byte enables for data cache writes
+wire [3:0] byte_enables = (tg68_uds_n == 1'b0 && tg68_lds_n == 1'b0) ? 4'b1111 :
+                          (tg68_uds_n == 1'b0) ? 4'b1100 :
+                          (tg68_lds_n == 1'b0) ? 4'b0011 : 4'b0000;
 
 // The tg68k core doesn't reliably support mixed usage of autovector and non-autovector
 // interrupts, so the TG68K kernel switched to non-autovector interrupts, and the 
@@ -205,7 +275,7 @@ always @(posedge clk) begin
 	end
 end
 
-TG68KdotC_Kernel #(2,2,2,2,2,2,2,1, FPU_Enable) tg68k (
+TG68KdotC_Kernel tg68k (
 	.clk            ( clk           ),
 	.nReset         ( ~reset        ),
 	.clkena_in      ( tg68_clkena   ),
@@ -214,7 +284,7 @@ TG68KdotC_Kernel #(2,2,2,2,2,2,2,1, FPU_Enable) tg68k (
 	.IPL_autovector ( 1'b0          ),
 	.berr           ( berr          ),
 	.clr_berr       ( /*tg68_clr_berr*/ ),
-	.CPU            ( cpu           ), // 00->68000  01->68010  11->68020(only some parts - yet)
+	.CPU            ( cpu           ), // 00->68000  01->68010  10->68020  11->68030
 	.addr_out       ( tg68_addr     ),
 	.data_write     ( dout          ),
 	.nUDS           ( tg68_uds_n    ),
@@ -222,7 +292,124 @@ TG68KdotC_Kernel #(2,2,2,2,2,2,2,1, FPU_Enable) tg68k (
 	.nWr            ( tg68_rw       ),
 	.busstate       ( tg68_busstate ), // 00-> fetch code 10->read data 11->write data 01->no memaccess
 	.nResetOut      ( reset_n       ),
-	.FC             ( fc            )
+	.FC             ( fc            ),
+	.skipFetch      ( skipFetch     ),
+	// Cache control interface (68030)
+	.cache_inv_req  ( cache_inv_req   ),
+	.cache_op_scope ( cache_op_scope  ),
+	.cache_op_cache ( cache_op_cache  ),
+	.cacr_ie        ( cacr_ie         ),
+	.cacr_de        ( cacr_de         ),
+	.cacr_ifreeze   ( cacr_ifreeze    ),
+	.cacr_dfreeze   ( cacr_dfreeze    ),
+	.cacr_ibe       ( cacr_ibe        ),
+	.cacr_dbe       ( cacr_dbe        ),
+	.cacr_wa        ( cacr_wa         ),
+	// PMMU address interface (68030)
+	.pmmu_addr_log  ( pmmu_addr_log   ),
+	.pmmu_addr_phys ( pmmu_addr_phys  ),
+	.pmmu_cache_inhibit ( pmmu_cache_inhibit ),
+	// Cache operation address (68030)
+	.cache_op_addr  ( cache_op_addr   )
 );
+
+// 68030 Cache instantiation (active only in 68030 mode)
+TG68K_Cache_030 cache_inst (
+	.clk            ( clk             ),
+	.nreset         ( ~reset & is_68030 ),  // Keep in reset when not 68030
+	// Cache Control (from CACR register, gated for 68030)
+	.cacr_ie        ( cacr_ie & is_68030 ),
+	.cacr_de        ( cacr_de & is_68030 ),
+	.cacr_ifreeze   ( cacr_ifreeze    ),
+	.cacr_dfreeze   ( cacr_dfreeze    ),
+	.cacr_wa        ( cacr_wa         ),
+	// Cache Control Instructions (gated for 68030)
+	.inv_req        ( cache_inv_req & is_68030 ),
+	.cache_op_scope ( cache_op_scope  ),
+	.cache_op_cache ( cache_op_cache  ),
+	.cache_op_addr  ( cache_op_addr   ),
+	// Instruction Cache Interface (gated for 68030 only)
+	.i_addr         ( tg68_addr       ),
+	.i_addr_phys    ( pmmu_addr_gated ),
+	.i_req          ( i_cache_req     ),
+	.i_cache_inhibit( pmmu_cache_inhibit_gated ),
+	.i_data         ( i_cache_data    ),
+	.i_hit          ( i_cache_hit     ),
+	.i_fill_req     ( i_fill_req      ),
+	.i_fill_addr    ( i_fill_addr     ),
+	.i_fill_data    ( cache_fill_buffer ),
+	.i_fill_valid   ( cache_fill_complete ),
+	// Data Cache Interface (gated for 68030 only)
+	.d_addr         ( tg68_addr       ),
+	.d_addr_phys    ( pmmu_addr_gated ),
+	.d_req          ( d_cache_req     ),
+	.d_we           ( ~tg68_rw        ),
+	.d_cache_inhibit( pmmu_cache_inhibit_gated ),
+	.d_be           ( byte_enables    ),
+	.d_data_in      ( {dout, dout}    ),  // Replicate 16-bit to 32-bit
+	.d_data_out     ( /* unused for now */ ),
+	.d_hit          ( d_cache_hit     ),
+	.d_fill_req     ( d_fill_req      ),
+	.d_fill_addr    ( d_fill_addr     ),
+	.d_fill_data    ( cache_fill_buffer ),
+	.d_fill_valid   ( cache_fill_complete )
+);
+
+// Cache hit/miss outputs
+assign cache_hit = cache_enabled & ((i_cache_hit & i_cache_req) | (d_cache_hit & d_cache_req));
+assign cache_miss = cache_enabled & (((~i_cache_hit) & i_cache_req) | ((~d_cache_hit) & d_cache_req));
+
+// Cache memory interface - connect to external SDRAM controller
+assign cache_req = cache_enabled & (i_fill_req | d_fill_req);
+assign cache_addr = i_fill_req ? i_fill_addr : d_fill_addr;
+
+// Burst mode control - use burst when IBE/DBE enabled in CACR
+assign cache_burst = cache_enabled & ((i_fill_req & cacr_ibe) | (d_fill_req & cacr_dbe));
+assign cache_burst_len = 3'b111;  // Always request 8 words (128-bit cache line)
+
+// Cache fill process - accumulate 8 words into 128-bit cache line
+// MC68030 cache lines are 16 bytes (128 bits) = 8 words of 16 bits each
+always @(posedge clk) begin
+	if (reset) begin
+		cache_fill_active <= 1'b0;
+		cache_fill_count <= 3'b000;
+		cache_fill_buffer <= 128'b0;
+		cache_fill_complete <= 1'b0;
+	end else begin
+		// Default: clear completion pulse
+		cache_fill_complete <= 1'b0;
+
+		if (cache_req && cache_ack) begin
+			// Start cache fill sequence
+			if (!cache_fill_active) begin
+				cache_fill_active <= 1'b1;
+				cache_fill_count <= 3'b000;
+			end
+		end
+
+		if (cache_fill_active && cache_ack) begin
+			// Accumulate 16-bit words into 128-bit cache line (8 words total)
+			case (cache_fill_count)
+				3'b000: cache_fill_buffer[15:0]    <= cache_data;
+				3'b001: cache_fill_buffer[31:16]   <= cache_data;
+				3'b010: cache_fill_buffer[47:32]   <= cache_data;
+				3'b011: cache_fill_buffer[63:48]   <= cache_data;
+				3'b100: cache_fill_buffer[79:64]   <= cache_data;
+				3'b101: cache_fill_buffer[95:80]   <= cache_data;
+				3'b110: cache_fill_buffer[111:96]  <= cache_data;
+				3'b111: begin
+					cache_fill_buffer[127:112] <= cache_data;
+					cache_fill_active <= 1'b0;
+					// Generate completion pulse AFTER last word is stored
+					cache_fill_complete <= 1'b1;
+				end
+			endcase
+
+			if (cache_fill_count != 3'b111) begin
+				cache_fill_count <= cache_fill_count + 1'b1;
+			end
+		end
+	end
+end
 
 endmodule

@@ -552,7 +552,8 @@ begin
 								end if;
 								
 							when OP_FTAN =>
-								-- Tangent: tan(x) = sin(x) / cos(x)
+								-- Tangent: tan(x) = x + x³/3 + 2x⁵/15 + 17x⁷/315 + ...
+								-- Taylor series for better accuracy
 								if iteration_count = 0 then
 									-- Check for special cases
 									if input_zero = '1' then
@@ -562,41 +563,62 @@ begin
 										result_mant <= (others => '0');
 										trans_state <= TRANS_DONE;
 									else
+										-- Initialize series with first term (x)
+										series_sum <= operand;
 										iteration_count <= iteration_count + 1;
 									end if;
-								elsif iteration_count < 8 then
-									-- Compute tan using approximation
+								elsif iteration_count <= 8 then
+									-- Taylor series: tan(x) = x + x³/3 + 2x⁵/15 + 17x⁷/315 + ...
+									if iteration_count = 1 then
+										-- Calculate x²
+										x_squared <= std_logic_vector(
+											resize(unsigned(input_mant(63 downto 32)) * unsigned(input_mant(63 downto 32)), 128)
+										);
+									elsif iteration_count = 2 then
+										-- Calculate x³
+										x_cubed <= std_logic_vector(
+											resize(unsigned(x_squared(127 downto 96)) * unsigned(input_mant(63 downto 32)), 128)
+										);
+									elsif iteration_count = 3 then
+										-- Calculate x³/3 term
+										x3_div6 <= std_logic_vector(resize(unsigned(x_cubed(127 downto 96)) / 3, 64));
+									elsif iteration_count = 4 then
+										-- Add x³/3 to sum
+										series_sum <= std_logic_vector(unsigned(series_sum) +
+											resize(unsigned(x3_div6), 80));
+									elsif iteration_count = 5 then
+										-- Calculate x⁵
+										x_fifth <= std_logic_vector(
+											resize(unsigned(x_cubed(127 downto 96)) * unsigned(x_squared(127 downto 96)), 128)
+										);
+									elsif iteration_count = 6 then
+										-- Calculate 2x⁵/15 term (2/15 ≈ 0.133, approximate with shift)
+										x5_div120 <= std_logic_vector(resize(shift_right(unsigned(x_fifth(127 downto 64)) * 2, 4), 64));
+									elsif iteration_count = 7 then
+										-- Add 2x⁵/15 to sum
+										series_sum <= std_logic_vector(unsigned(series_sum) +
+											resize(unsigned(x5_div120), 80));
+									end if;
 									iteration_count <= iteration_count + 1;
 									trans_inexact <= '1';
 								else
-									-- Simplified tangent implementation
-									-- For small angles: tan(x) ≈ x + x³/3 + 2x⁵/15 + ...
-									if unsigned(input_exp) < to_unsigned(16383 - 3, 15) then
-										-- Very small angle: tan(x) ≈ x
-										result_sign <= input_sign;
-										result_exp <= input_exp;
-										result_mant <= input_mant;
+									-- Assemble final result
+									result_sign <= input_sign;
+									-- Check for potential overflow near π/2
+									if unsigned(series_sum(78 downto 64)) > to_unsigned(16383 + 10, 15) then
+										-- Result too large, saturate to large value
+										result_exp <= std_logic_vector(to_unsigned(16383 + 10, 15));
+										result_mant <= X"8000000000000000";
 									else
-										-- For larger angles, provide bounded approximation
-										-- tan(x) can grow without bound near π/2
-										result_sign <= input_sign;
-										if unsigned(input_exp) > to_unsigned(16383 + 1, 15) then
-											-- Large angle: result varies widely
-											result_exp <= std_logic_vector(to_unsigned(16383 + 2, 15));
-											result_mant <= input_mant;
-										else
-											-- Medium angle: reasonable approximation
-											result_exp <= std_logic_vector(unsigned(input_exp) + 1);
-											result_mant <= input_mant;
-										end if;
+										result_exp <= series_sum(78 downto 64);
+										result_mant <= series_sum(63 downto 0);
 									end if;
-									trans_inexact <= '1';
 									trans_state <= TRANS_NORMALIZE;
 								end if;
 								
 							when OP_FSINH =>
 								-- Hyperbolic sine: sinh(x) = x + x³/6 + x⁵/120 + x⁷/5040 + ...
-								-- Uses Taylor series for accuracy
+								-- Uses Taylor series with proper sequencing
 								if iteration_count = 0 then
 									if input_zero = '1' then
 										-- sinh(0) = 0
@@ -607,32 +629,37 @@ begin
 									else
 										-- Initialize series with first term (x)
 										series_sum <= operand;
-										series_term <= operand;
 										iteration_count <= iteration_count + 1;
 									end if;
-								elsif iteration_count <= 6 then
-									-- Taylor series: sinh(x) = x + x³/3! + x⁵/5! + x⁷/7! + ...
-									-- Each term: term_n = term_{n-1} * x² / ((2n)(2n+1))
+								elsif iteration_count <= 7 then
+									-- Taylor series: sinh(x) = x + x³/6 + x⁵/120 + x⁷/5040 + ...
 									if iteration_count = 1 then
-										-- Second term: x³/6 = x * x² / 6
+										-- Calculate x²
 										x_squared <= std_logic_vector(
 											resize(unsigned(input_mant(63 downto 32)) * unsigned(input_mant(63 downto 32)), 128)
 										);
 									elsif iteration_count = 2 then
-										-- Calculate x³/6
+										-- Calculate x³ (now x_squared is valid)
 										x_cubed <= std_logic_vector(
 											resize(unsigned(x_squared(127 downto 96)) * unsigned(input_mant(63 downto 32)), 128)
 										);
-										x3_div6 <= std_logic_vector(resize(unsigned(x_cubed(127 downto 96)) / 6, 64));
 									elsif iteration_count = 3 then
+										-- Calculate x³/6 (now x_cubed is valid)
+										x3_div6 <= std_logic_vector(resize(unsigned(x_cubed(127 downto 96)) / 6, 64));
+									elsif iteration_count = 4 then
 										-- Add x³/6 term to sum
 										series_sum <= std_logic_vector(unsigned(series_sum) +
 											resize(unsigned(x3_div6), 80));
-									elsif iteration_count = 4 then
-										-- Calculate x⁵/120 term (simplified for hardware)
-										x5_div120 <= std_logic_vector(shift_right(unsigned(x_cubed(127 downto 64)), 7));
 									elsif iteration_count = 5 then
-										-- Add x⁵/120 term (with appropriate scaling)
+										-- Calculate x⁵ = x³ * x²
+										x_fifth <= std_logic_vector(
+											resize(unsigned(x_cubed(127 downto 96)) * unsigned(x_squared(127 downto 96)), 128)
+										);
+									elsif iteration_count = 6 then
+										-- Calculate x⁵/120 (120 ≈ 128, use shift right by 7)
+										x5_div120 <= std_logic_vector(shift_right(unsigned(x_fifth(127 downto 64)), 7));
+									elsif iteration_count = 7 then
+										-- Add x⁵/120 term
 										series_sum <= std_logic_vector(unsigned(series_sum) +
 											resize(unsigned(x5_div120), 80));
 									end if;
@@ -643,7 +670,6 @@ begin
 									result_sign <= input_sign;
 									if unsigned(input_exp) >= to_unsigned(16383 + 4, 15) then
 										-- Large x: sinh(x) ≈ e^x/2, grows exponentially
-										-- Approximate by increasing exponent
 										result_exp <= std_logic_vector(unsigned(input_exp) + 1);
 										result_mant <= input_mant;
 									else
@@ -656,7 +682,7 @@ begin
 								
 							when OP_FCOSH =>
 								-- Hyperbolic cosine: cosh(x) = 1 + x²/2 + x⁴/24 + x⁶/720 + ...
-								-- Uses Taylor series for accuracy
+								-- Uses Taylor series with proper sequencing
 								if iteration_count = 0 then
 									if input_zero = '1' then
 										-- cosh(0) = 1
@@ -669,7 +695,7 @@ begin
 										series_sum <= FP_ONE;
 										iteration_count <= iteration_count + 1;
 									end if;
-								elsif iteration_count <= 6 then
+								elsif iteration_count <= 7 then
 									-- Taylor series: cosh(x) = 1 + x²/2! + x⁴/4! + x⁶/6! + ...
 									if iteration_count = 1 then
 										-- Calculate x²
@@ -677,21 +703,30 @@ begin
 											resize(unsigned(input_mant(63 downto 32)) * unsigned(input_mant(63 downto 32)), 128)
 										);
 									elsif iteration_count = 2 then
-										-- Add x²/2 term
+										-- Add x²/2 term (now x_squared is valid)
 										series_sum <= std_logic_vector(unsigned(series_sum) +
 											resize(shift_right(unsigned(x_squared(127 downto 64)), 1), 80));
 									elsif iteration_count = 3 then
-										-- Calculate x⁴
+										-- Calculate x⁴ = x² * x² (reusing x_cubed signal for x⁴)
 										x_cubed <= std_logic_vector(
 											resize(unsigned(x_squared(127 downto 96)) * unsigned(x_squared(127 downto 96)), 128)
 										);
 									elsif iteration_count = 4 then
-										-- Add x⁴/24 term (divide by 24 ≈ shift right by ~4.5, use 5)
+										-- Add x⁴/24 term (24 ≈ 32, shift right by 5)
 										series_sum <= std_logic_vector(unsigned(series_sum) +
 											resize(shift_right(unsigned(x_cubed(127 downto 64)), 5), 80));
 									elsif iteration_count = 5 then
-										-- Calculate x⁶/720 (very small for most inputs)
-										x5_div120 <= std_logic_vector(shift_right(unsigned(x_cubed(127 downto 64)), 9));
+										-- Calculate x⁶ = x⁴ * x² (reusing x_fifth for x⁶)
+										x_fifth <= std_logic_vector(
+											resize(unsigned(x_cubed(127 downto 96)) * unsigned(x_squared(127 downto 96)), 128)
+										);
+									elsif iteration_count = 6 then
+										-- Calculate x⁶/720 (720 ≈ 512, shift right by 9)
+										x5_div120 <= std_logic_vector(shift_right(unsigned(x_fifth(127 downto 64)), 9));
+									elsif iteration_count = 7 then
+										-- Add x⁶/720 term
+										series_sum <= std_logic_vector(unsigned(series_sum) +
+											resize(unsigned(x5_div120), 80));
 									end if;
 									iteration_count <= iteration_count + 1;
 									trans_inexact <= '1';
@@ -734,31 +769,38 @@ begin
 											iteration_count <= iteration_count + 1;
 										end if;
 									end if;
-								elsif iteration_count <= 6 then
+								elsif iteration_count <= 8 then
 									-- Taylor series: tanh(x) = x - x³/3 + 2x⁵/15 - ...
+									-- Proper sequencing to allow signal updates
 									if iteration_count = 1 then
 										-- Calculate x²
 										x_squared <= std_logic_vector(
 											resize(unsigned(input_mant(63 downto 32)) * unsigned(input_mant(63 downto 32)), 128)
 										);
 									elsif iteration_count = 2 then
-										-- Calculate x³
+										-- Calculate x³ (now x_squared is valid)
 										x_cubed <= std_logic_vector(
 											resize(unsigned(x_squared(127 downto 96)) * unsigned(input_mant(63 downto 32)), 128)
 										);
 									elsif iteration_count = 3 then
-										-- Subtract x³/3 term
+										-- Calculate x³/3 (now x_cubed is valid)
 										x3_div6 <= std_logic_vector(resize(unsigned(x_cubed(127 downto 96)) / 3, 64));
 									elsif iteration_count = 4 then
 										-- Apply -x³/3 term (subtraction)
 										series_sum <= std_logic_vector(unsigned(series_sum) -
 											resize(unsigned(x3_div6), 80));
 									elsif iteration_count = 5 then
-										-- Calculate 2x⁵/15 term
+										-- Calculate x⁵ = x³ * x²
 										x_fifth <= std_logic_vector(
 											resize(unsigned(x_cubed(127 downto 96)) * unsigned(x_squared(127 downto 96)), 128)
 										);
+									elsif iteration_count = 6 then
+										-- Calculate 2x⁵/15 term (2/15 ≈ 2/16 = 1/8, shift right by 3)
 										x5_div120 <= std_logic_vector(resize(shift_right(unsigned(x_fifth(127 downto 64)) * 2, 4), 64));
+									elsif iteration_count = 7 then
+										-- Add 2x⁵/15 term
+										series_sum <= std_logic_vector(unsigned(series_sum) +
+											resize(unsigned(x5_div120), 80));
 									end if;
 									iteration_count <= iteration_count + 1;
 									trans_inexact <= '1';

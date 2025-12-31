@@ -56,8 +56,8 @@ entity TG68K_FPU is
 		
 		-- Control Signals
 		fpu_busy				: out std_logic;						-- FPU is executing multi-cycle operation
-		fpu_done				: buffer std_logic;						-- Operation complete
-		fpu_exception			: buffer std_logic;						-- FPU exception occurred
+		fpu_done				: out std_logic;						-- Operation complete
+		fpu_exception			: out std_logic;						-- FPU exception occurred
 		exception_code			: out std_logic_vector(7 downto 0);	-- Exception type
 		
 		-- Status and Control Registers
@@ -76,11 +76,16 @@ entity TG68K_FPU is
 		cir_read				: in std_logic;							-- CPU reading from CIR  
 		cir_data_in				: in std_logic_vector(15 downto 0);	-- Data from CPU to CIR
 		cir_data_out			: out std_logic_vector(15 downto 0);	-- Data from CIR to CPU
-		cir_data_valid			: buffer std_logic						-- CIR data available for CPU
+		cir_data_valid			: out std_logic						-- CIR data available for CPU
 	);
 end TG68K_FPU;
 
 architecture rtl of TG68K_FPU is
+
+	-- Internal versions of output ports (for reading back within architecture)
+	signal fpu_done_i : std_logic := '0';
+	signal fpu_exception_i : std_logic := '0';
+	signal cir_data_valid_i : std_logic := '0';
 
 	-- MC68881/68882 Floating Point Register File (8 x 80-bit registers)
 	-- Stored as 80-bit IEEE 754 extended precision values
@@ -968,7 +973,7 @@ begin
 	
 	-- Dynamic FSAVE frame format and size determination process
 	-- CRITICAL: This process provides the frame size to CPU BEFORE predecrement occurs
-	fsave_format_process: process(fpu_enable, fpu_state, fp_registers, fpcr, fpsr, fpu_busy_internal, fpu_exception, opcode, fpu_just_reset)
+	fsave_format_process: process(fpu_enable, fpu_state, fp_registers, fpcr, fpsr, fpu_busy_internal, fpu_exception_i, opcode, fpu_just_reset)
 		variable any_register_nonzero : std_logic;
 		variable any_control_nonzero : std_logic;
 		variable has_pending_exception : std_logic;
@@ -994,7 +999,7 @@ begin
 			end if;
 
 			-- Check for pending exceptions in FPSR
-			has_pending_exception := fpu_exception or fpsr(15) or fpsr(14) or fpsr(13) or fpsr(12) or fpsr(11) or fpsr(10) or fpsr(9) or fpsr(8);
+			has_pending_exception := fpu_exception_i or fpsr(15) or fpsr(14) or fpsr(13) or fpsr(12) or fpsr(11) or fpsr(10) or fpsr(9) or fpsr(8);
 
 			-- MC68882 Frame Format Determination per specification:
 			-- - NULL frame (4 bytes): FPU completely idle, no state modified
@@ -1069,9 +1074,7 @@ begin
 	begin
 		if nReset = '0' then
 			-- Note: fp_registers initialization moved to main state machine to avoid multiple drivers
-			-- Reset allocation tracking
-			fp_reg_allocated <= (others => '0');
-			fp_reg_last_write <= "000";
+			-- Note: fp_reg_allocated and fp_reg_last_write reset moved to state_machine to avoid multiple drivers
 			-- Reset usage tracking for enhanced LRU
 			fp_reg_usage_count <= (others => 0);
 			fp_reg_global_counter <= 0;
@@ -1088,20 +1091,10 @@ begin
 			if fp_reg_write_enable = '1' and fp_reg_access_valid = '1' then
 				-- Bounds check for write address
 				if to_integer(unsigned(fp_reg_write_addr)) <= 7 then
-					-- ACTUAL IMPLEMENTATION: Update allocation tracking (no register write)
-					fp_reg_allocated(to_integer(unsigned(fp_reg_write_addr))) <= '1';
-					fp_reg_last_write <= fp_reg_write_addr;
+					-- Note: fp_reg_allocated and fp_reg_last_write moved to state_machine to avoid multiple drivers
 					-- ACTUAL IMPLEMENTATION: Update usage timestamp for accurate LRU tracking
 					fp_reg_usage_count(to_integer(unsigned(fp_reg_write_addr))) <= fp_reg_global_counter;
 				end if;
-				-- REMOVED: fp_reg_access_valid assignment to avoid multiple drivers
-				-- Access validation moved to main state machine
-			elsif fp_reg_write_enable = '1' and fp_reg_access_valid = '0' then
-				-- ACTUAL IMPLEMENTATION: Reject unauthorized register writes
-				-- Write attempt without proper validation - this is a security violation
-				-- REMOVED: fp_reg_write_enable assignment to avoid multiple drivers
-				-- Write authorization handled by main state machine
-				null;  -- No action - rejections handled by main state machine
 			end if;
 			
 			-- ACTUAL IMPLEMENTATION: Enhanced register recycling logic with accurate LRU
@@ -1187,7 +1180,7 @@ begin
 	begin
 		if nReset = '0' then
 			fpu_state <= FPU_IDLE;
-			fpu_done <= '0';
+			fpu_done_i <= '0';
 			-- REMOVED: main_fpu_exception split approach - reverting to direct fpu_exception
 			state_timeout_counter <= 0;  -- Initialize main timeout counter
 			exception_code_internal <= (others => '0');
@@ -1248,7 +1241,7 @@ begin
 					when FPU_IDLE =>
 						fpu_data_out <= (others => '0');
 						-- Don't reset fpu_done here - let it hold until next operation starts
-						fpu_exception <= '0';
+						fpu_exception_i <= '0';
 						
 						-- Check for direct CPU requests (bypassing decode)
 						if fsave_data_request = '1' then
@@ -1256,11 +1249,11 @@ begin
 							if supervisor_mode = '0' then
 								-- Privilege violation - generate exception
 								fpu_state <= FPU_EXCEPTION_STATE;
-								fpu_exception <= '1';
+								fpu_exception_i <= '1';
 								exception_code_internal <= X"20";  -- Privilege violation
 							else
 								-- CPU is requesting FSAVE data - enter FSAVE state directly
-								fpu_done <= '0';  -- Reset completion signal
+								fpu_done_i <= '0';  -- Reset completion signal
 								fsave_counter <= 0;
 								-- CRITICAL: Latch frame format and size at FSAVE start for stability
 								fsave_frame_format_latched <= fsave_frame_format;
@@ -1275,11 +1268,11 @@ begin
 							if supervisor_mode = '0' then
 								-- Privilege violation - generate exception
 								fpu_state <= FPU_EXCEPTION_STATE;
-								fpu_exception <= '1';
+								fpu_exception_i <= '1';
 								exception_code_internal <= X"20";  -- Privilege violation
 							else
 								-- CPU is writing FRESTORE data - enter FRESTORE state directly
-								fpu_done <= '0';  -- Reset completion signal
+								fpu_done_i <= '0';  -- Reset completion signal
 								fsave_counter <= 0;
 								frestore_frame_format <= (others => '0');
 								frestore_reg_buffer <= (others => '0');
@@ -1295,24 +1288,24 @@ begin
 									fpu_state <= FPU_DECODE;
 								when X"0002" =>  -- Reset command
 									fpu_state <= FPU_IDLE;
-									fpu_exception <= '0';
-									fpu_done <= '0';
+									fpu_exception_i <= '0';
+									fpu_done_i <= '0';
 								when X"0003" =>  -- Cancel current operation
 									fpu_state <= FPU_IDLE;
-									fpu_done <= '1';  -- Signal completion
+									fpu_done_i <= '1';  -- Signal completion
 								when others =>
 									null;  -- Invalid commands handled by CIR process
 							end case;
 						elsif command_pending = '1' and command_valid = '0' then
 							-- Privilege violation or invalid command
 							fpu_state <= FPU_EXCEPTION_STATE;
-							fpu_exception <= '1';
+							fpu_exception_i <= '1';
 							exception_code_internal <= X"20";  -- Privilege violation
 						end if;
 					
 					when FPU_DECODE =>
 						fpu_data_out <= (others => '0');
-						fpu_done <= '0';  -- Reset completion signal at start of new operation
+						fpu_done_i <= '0';  -- Reset completion signal at start of new operation
 						-- Reset timeout counter at start of decode
 						timeout_counter <= 0;
 						-- Clear fpu_just_reset flag on any new operation (per Musashi behavior)
@@ -1333,7 +1326,7 @@ begin
 								else
 									-- command_valid driven by main state machine
 									restore_privilege_violation <= '1';
-									fpu_exception <= '1';
+									fpu_exception_i <= '1';
 									exception_code_internal <= X"20";  -- Privilege violation
 									fpu_state <= FPU_EXCEPTION_STATE;
 								end if;
@@ -1349,7 +1342,7 @@ begin
 										else
 											-- command_valid driven by main state machine
 											restore_privilege_violation <= '1';
-											fpu_exception <= '1';
+											fpu_exception_i <= '1';
 											exception_code_internal <= X"20";  -- Privilege violation
 											fpu_state <= FPU_EXCEPTION_STATE;
 										end if;
@@ -1368,7 +1361,7 @@ begin
 									-- User mode trap - may be privileged
 									-- command_valid driven by main state machine
 									restore_privilege_violation <= '1';
-									fpu_exception <= '1';
+									fpu_exception_i <= '1';
 									exception_code_internal <= X"20";  -- Privilege violation
 									fpu_state <= FPU_EXCEPTION_STATE;
 								end if;
@@ -1381,7 +1374,7 @@ begin
 								else
 									-- F-line exception if FPU disabled
 									-- command_valid driven by main state machine
-									fpu_exception <= '1';
+									fpu_exception_i <= '1';
 									exception_code_internal <= X"0B";  -- F-line exception
 									fpu_state <= FPU_EXCEPTION_STATE;
 								end if;
@@ -1408,17 +1401,17 @@ begin
 						if decoder_illegal = '1' then
 							-- Illegal instruction
 							fpu_state <= FPU_EXCEPTION_STATE;
-							fpu_exception <= '1';
+							fpu_exception_i <= '1';
 							exception_code_internal <= X"10";  -- Illegal instruction
 						elsif decoder_unsupported = '1' then
 							-- Unsupported instruction (transcendental functions, etc.)
 							fpu_state <= FPU_EXCEPTION_STATE;
-							fpu_exception <= '1';
+							fpu_exception_i <= '1';
 							exception_code_internal <= X"0C";  -- Unimplemented instruction
 						elsif decoder_valid_instruction = '0' then
 							-- Invalid F-line instruction
 							fpu_state <= FPU_EXCEPTION_STATE;
-							fpu_exception <= '1';
+							fpu_exception_i <= '1';
 							exception_code_internal <= X"10";  -- Illegal instruction
 						-- FIX ITEM 47: FDBcc instruction implementation
 					elsif decoder_instruction_type = INST_FDBCC then
@@ -1432,7 +1425,7 @@ begin
 							fpu_data_out <= std_logic_vector(signed(cpu_data_in) - 1);  -- Return decremented value
 						end if;
 						fpu_state <= FPU_IDLE;
-						fpu_done <= '1';
+						fpu_done_i <= '1';
 
 						-- FBcc instruction implementation
 					elsif decoder_instruction_type = INST_FBCC then
@@ -1444,7 +1437,7 @@ begin
 							fpu_data_out <= X"00000000";  -- Signal: take branch = false
 						end if;
 						fpu_state <= FPU_IDLE;
-						fpu_done <= '1';
+						fpu_done_i <= '1';
 
 					elsif decoder_instruction_type = INST_FTRAP then
 						-- FTRAPcc: Trap on floating-point condition
@@ -1452,12 +1445,12 @@ begin
 						if evaluate_fpu_condition(fpsr(31 downto 28), opcode(5 downto 0)) = '1' then
 							-- Condition true: trigger FP trap
 							fpu_state <= FPU_EXCEPTION_STATE;
-							fpu_exception <= '1';
+							fpu_exception_i <= '1';
 							exception_code_internal <= X"07";  -- FTRAPcc exception
 						else
 							-- Condition false: continue normally
 							fpu_state <= FPU_IDLE;
-							fpu_done <= '1';
+							fpu_done_i <= '1';
 						end if;
 						
 						-- CRITICAL FIX: Fast path for register-direct FTST (no memory transfer)
@@ -1520,7 +1513,7 @@ begin
 								else
 									-- Invalid register access - trigger exception
 									fpu_state <= FPU_EXCEPTION_STATE;
-									fpu_exception <= '1';
+									fpu_exception_i <= '1';
 									exception_code_internal <= X"14";  -- Register access violation
 								end if;
 							when OP_FNEG =>
@@ -1536,7 +1529,7 @@ begin
 								else
 									-- Invalid register access - trigger exception
 									fpu_state <= FPU_EXCEPTION_STATE;
-									fpu_exception <= '1';
+									fpu_exception_i <= '1';
 									exception_code_internal <= X"14";  -- Register access violation
 								end if;
 							when OP_FMOVE =>
@@ -1551,7 +1544,7 @@ begin
 								else
 									-- Invalid register access - trigger exception
 									fpu_state <= FPU_EXCEPTION_STATE;
-									fpu_exception <= '1';
+									fpu_exception_i <= '1';
 									exception_code_internal <= X"14";  -- Register access violation
 								end if;
 							when OP_FMOVECR =>
@@ -1575,7 +1568,7 @@ begin
 									fpu_data_out <= X"00000000";  -- Clear byte to all 0s
 								end if;
 								fpu_state <= FPU_IDLE;
-								fpu_done <= '1';
+								fpu_done_i <= '1';
 							when others =>
 								null;
 						end case;
@@ -1584,7 +1577,7 @@ begin
 							-- Use proper MC68882 condition code setting function
 							set_fpsr_condition_codes(fpsr, fp_registers(to_integer(unsigned(decoder_dest_reg))));
 							fpu_state <= FPU_IDLE;
-							fpu_done <= '1';
+							fpu_done_i <= '1';
 						end if;
 					elsif decoder_instruction_type = INST_FMOVEM then
 						-- FMOVEM - Multi-register transfer
@@ -1595,7 +1588,7 @@ begin
 						   (extension_word(7 downto 0) = "00000000") then
 							-- Invalid FMOVEM format or empty register list
 							fpu_state <= FPU_EXCEPTION_STATE;
-							fpu_exception <= '1';
+							fpu_exception_i <= '1';
 							exception_code_internal <= X"0C";  -- Invalid instruction format
 						else
 							-- fpu_operation is already set by decode process
@@ -1663,7 +1656,7 @@ begin
 							-- FIX ITEM 48: Check for addressing errors and handle appropriately
 							if movem_unit_address_error = '1' then
 								fpu_state <= FPU_EXCEPTION_STATE;
-								fpu_exception <= '1';
+								fpu_exception_i <= '1';
 								exception_code_internal <= X"03";  -- Address error
 							else
 								-- Valid addressing mode - proceed with FMOVEM
@@ -1680,19 +1673,19 @@ begin
 						if extension_word(12 downto 10) = "000" then
 							-- No control registers selected - operation complete
 							fpu_state <= FPU_IDLE;
-							fpu_done <= '1';
+							fpu_done_i <= '1';
 						else
 							-- Start FMOVEM control register operation
 							-- Use CPU-managed interface for memory operations
 							fpu_state <= FPU_IDLE;
-							fpu_done <= '1';  -- Signal CPU to handle the transfers
+							fpu_done_i <= '1';  -- Signal CPU to handle the transfers
 						end if;
 					elsif decoder_instruction_type = INST_FSAVE then
 							-- FSAVE - Requires supervisor privilege per MC68882 specification
 							if supervisor_mode = '0' then
 								-- Privilege violation - generate exception
 								fpu_state <= FPU_EXCEPTION_STATE;
-								fpu_exception <= '1';
+								fpu_exception_i <= '1';
 								exception_code_internal <= X"20";  -- Privilege violation
 							else
 								-- FSAVE - Provide FPU state frame data to CPU
@@ -1711,7 +1704,7 @@ begin
 							if supervisor_mode = '0' then
 								-- Privilege violation - generate exception
 								fpu_state <= FPU_EXCEPTION_STATE;
-								fpu_exception <= '1';
+								fpu_exception_i <= '1';
 								exception_code_internal <= X"20";  -- Privilege violation
 							else
 								-- FRESTORE - Restore FPU state from memory
@@ -1744,7 +1737,7 @@ begin
 									if supervisor_mode = '0' then
 										-- Privilege violation - generate exception
 										fpu_state <= FPU_EXCEPTION_STATE;
-										fpu_exception <= '1';
+										fpu_exception_i <= '1';
 										exception_code_internal <= X"20";  -- Privilege violation
 									else
 										-- CPU will handle memory writes, provide data when requested
@@ -1754,7 +1747,7 @@ begin
 								else
 									-- Unknown FMOVEM format
 									fpu_state <= FPU_IDLE;
-									fpu_done <= '1';
+									fpu_done_i <= '1';
 								end if;
 							elsif (opcode(5 downto 3) = "001" and opcode(2 downto 0) = "101") then
 								-- F21Dxxxx - FMOVEM from memory (restore)
@@ -1768,7 +1761,7 @@ begin
 									if supervisor_mode = '0' then
 										-- Privilege violation - generate exception
 										fpu_state <= FPU_EXCEPTION_STATE;
-										fpu_exception <= '1';
+										fpu_exception_i <= '1';
 										exception_code_internal <= X"20";  -- Privilege violation
 									else
 										fpu_state <= FPU_FMOVEM_CR;
@@ -1777,12 +1770,12 @@ begin
 								else
 									-- Unknown FMOVEM format
 									fpu_state <= FPU_IDLE;
-									fpu_done <= '1';
+									fpu_done_i <= '1';
 								end if;
 							else
 								-- Unknown FMOVEM encoding
 								fpu_state <= FPU_IDLE;
-								fpu_done <= '1';
+								fpu_done_i <= '1';
 							end if;
 						elsif decoder_instruction_type = INST_FMOVE_CR then
 							-- Standard FMOVE control register operations
@@ -1801,7 +1794,7 @@ begin
 											fpu_data_out <= (others => '0');
 									end case;
 									fpu_state <= FPU_IDLE;
-									fpu_done <= '1';
+									fpu_done_i <= '1';
 								else
 									-- FMOVE <ea>,FPcr - Write to control register from source
 									case extension_word(12 downto 10) is  -- Control register select
@@ -1815,12 +1808,12 @@ begin
 											null;
 									end case;
 									fpu_state <= FPU_IDLE;
-									fpu_done <= '1';
+									fpu_done_i <= '1';
 								end if;
 							else
 								-- Unknown control register encoding
 								fpu_state <= FPU_IDLE;
-								fpu_done <= '1';
+								fpu_done_i <= '1';
 							end if;
 						elsif decoder_instruction_type = INST_GENERAL then
 							-- General arithmetic operations - handled by existing logic
@@ -1868,7 +1861,7 @@ begin
 								elsif fpu_operation = OP_FNOP then
 									-- FNOP - No operation, just complete immediately
 									fpu_state <= FPU_IDLE;
-									fpu_done <= '1';
+									fpu_done_i <= '1';
 								-- CLEANUP: Removed fast path optimization logic for FABS/FNEG - use standard ALU path
 								elsif fpu_operation = OP_FTST or fpu_operation = OP_FCMP then
 									-- FTST/FCMP: cpGEN instructions require CIR protocol
@@ -1886,7 +1879,7 @@ begin
 							else
 								-- Other operations not yet implemented
 								fpu_state <= FPU_EXCEPTION_STATE;
-								fpu_exception <= '1';
+								fpu_exception_i <= '1';
 								exception_code_internal <= X"0C";  -- Unimplemented instruction
 							end if;
 						
@@ -1898,7 +1891,7 @@ begin
 							if to_integer(unsigned(decoder_source_reg)) > 7 then
 								-- Invalid register number - trigger exception
 								fpu_state <= FPU_EXCEPTION_STATE;
-								fpu_exception <= '1';
+								fpu_exception_i <= '1';
 								exception_code_internal <= X"0C";  -- Invalid operand
 							end if;
 							case decoder_dest_format is
@@ -2076,7 +2069,7 @@ begin
 							if extension_word(7 downto 0) = "00000000" then
 								-- No registers to transfer
 								fpu_state <= FPU_IDLE;
-								fpu_done <= '1';
+								fpu_done_i <= '1';
 							else
 								-- CPU will manage FMOVEM transfers through fmovem_data_request interface
 								-- fpu_operation already set by decoder process
@@ -2086,7 +2079,7 @@ begin
 						else
 							-- Unknown instruction type
 							fpu_state <= FPU_EXCEPTION_STATE;
-							fpu_exception <= '1';
+							fpu_exception_i <= '1';
 							exception_code_internal <= X"0C";  -- Unimplemented instruction
 						end if;
 						
@@ -2181,7 +2174,7 @@ begin
 						if to_integer(unsigned(source_reg)) > 7 then
 							-- Invalid source register - trigger exception
 							fpu_state <= FPU_EXCEPTION_STATE;
-							fpu_exception <= '1';
+							fpu_exception_i <= '1';
 							exception_code_internal <= X"0C";  -- Invalid operand
 						else
 							alu_operand_a <= fp_registers(to_integer(unsigned(source_reg)))(79 downto 0);
@@ -2540,7 +2533,7 @@ begin
 									else
 										-- Invalid FPCR - force default mode or trigger exception
 										if fpcr(11) = '1' then  -- OPERR exception enable bit
-											fpu_exception <= '1';
+											fpu_exception_i <= '1';
 											exception_code_internal <= X"13";  -- OPERR exception code
 											fpu_state <= FPU_EXCEPTION_STATE;
 										else
@@ -2565,7 +2558,7 @@ begin
 									
 									-- If FPCR exception enable is set, trigger an OPERR exception
 									if fpcr(11) = '1' then  -- OPERR exception enable bit
-										fpu_exception <= '1';
+										fpu_exception_i <= '1';
 										exception_code_internal <= X"13";  -- OPERR exception code
 										fpu_state <= FPU_EXCEPTION_STATE;
 									end if;
@@ -2596,7 +2589,7 @@ begin
 							fpcr_write_pending <= '1';
 							-- If FPCR exception enable is set, trigger an OPERR exception
 							if fpcr(11) = '1' then  -- OPERR exception enable bit
-								fpu_exception <= '1';
+								fpu_exception_i <= '1';
 								exception_code_internal <= X"13";  -- OPERR exception code
 								fpu_state <= FPU_EXCEPTION_STATE;
 							end if;
@@ -2611,7 +2604,7 @@ begin
 							fpcr_write_pending <= '1';
 							-- If FPCR exception enable is set, trigger an OPERR exception
 							if fpcr(11) = '1' then  -- OPERR exception enable bit
-								fpu_exception <= '1';
+								fpu_exception_i <= '1';
 								exception_code_internal <= X"13";  -- OPERR exception code
 								fpu_state <= FPU_EXCEPTION_STATE;
 							end if;
@@ -2621,7 +2614,7 @@ begin
 						if fpu_operation = OP_FTST and decoder_ea_mode = "000" then
 							-- Register-direct FTST already executed in FPU_DECODE - complete immediately
 							fpu_state <= FPU_IDLE;
-							fpu_done <= '1';
+							fpu_done_i <= '1';
 							timeout_counter <= 0;  -- Reset timeout
 						-- FMOVEM operations now handled by MOVEM component
 						elsif fpu_operation = OP_FMOVEM then
@@ -2632,7 +2625,7 @@ begin
 							-- Placeholder: CPU will signal completion by ending operation
 							if timeout_counter > TIMEOUT_LIMIT_MEMORY then
 								fpu_state <= FPU_IDLE;
-								fpu_done <= '1';
+								fpu_done_i <= '1';
 							end if;
 						-- Check for completion from either ALU or transcendental unit
 						elsif (alu_operation_done = '1' or alu_result_valid = '1') or (trans_operation_done = '1' or trans_result_valid = '1') then
@@ -2668,7 +2661,7 @@ begin
 							if exception_pending_internal = '1' then
 								-- Exception should generate trap
 								fpu_state <= FPU_EXCEPTION_STATE;
-								fpu_exception <= '1';
+								fpu_exception_i <= '1';
 								exception_code_internal <= exception_vector_internal;
 								-- Use corrected result from exception handler
 								result_data <= exception_corrected_result;
@@ -2753,7 +2746,7 @@ begin
 								fpu_state <= FPU_UPDATE_FPSR;
 								else
 								-- Complex operation failed - trigger unimplemented instruction exception
-								fpu_exception <= '1';
+								fpu_exception_i <= '1';
 								exception_code_internal <= x"0B";  -- Unimplemented instruction
 								fpu_state <= FPU_EXCEPTION_STATE;
 							end if;
@@ -2766,7 +2759,7 @@ begin
 					when FPU_MEMORY_WRITE =>
 						-- CPU manages all memory operations - this state is unused
 						fpu_state <= FPU_IDLE;
-						fpu_done <= '1';
+						fpu_done_i <= '1';
 					
 					when FPU_WRITE_RESULT =>
 						-- Handle FMOVECR constant ROM vs normal result
@@ -2781,13 +2774,13 @@ begin
 									fp_reg_write_enable <= '1';  -- Trigger write through controlled interface
 								else
 									-- Invalid destination register
-									fpu_exception <= '1';
+									fpu_exception_i <= '1';
 									exception_code_internal <= X"14";  -- Register access violation
 									fpu_state <= FPU_EXCEPTION_STATE;
 								end if;
 								rom_read_enable <= '0';  -- Stop ROM read
 								fpu_state <= FPU_IDLE;
-								fpu_done <= '1';
+								fpu_done_i <= '1';
 								end if;
 							-- Wait for ROM to be ready
 						else
@@ -2938,7 +2931,7 @@ begin
 								fpu_data_out <= (others => '0');
 							end if;
 							fpu_state <= FPU_IDLE;
-							fpu_done <= '1';
+							fpu_done_i <= '1';
 						end if;
 
 					when FPU_UPDATE_FPSR =>
@@ -2949,11 +2942,11 @@ begin
 						-- The signal assignment from set_fpsr_condition_codes() takes effect at the
 						-- end of this clock cycle, so FSAVE will see updated FPSR in next cycle.
 						fpu_state <= FPU_IDLE;
-						fpu_done <= '1';
+						fpu_done_i <= '1';
 
 					when FPU_EXCEPTION_STATE =>
 						-- Proper exception handling with FPSR updates and FPCR enable checking
-						fpu_done <= '1';
+						fpu_done_i <= '1';
 						
 						-- Check if exception is enabled in FPCR before generating trap
 						-- FPCR exception enable bits: [15-8]
@@ -2994,43 +2987,43 @@ begin
 						case exception_code_internal is
 							when x"02" =>  -- BSUN exception
 								if fpcr(15) = '1' then  -- BSUN enable bit
-									fpu_exception <= '1';  -- Generate trap
+									fpu_exception_i <= '1';  -- Generate trap
 								else
-									fpu_exception <= '0';  -- No trap, just update FPSR
+									fpu_exception_i <= '0';  -- No trap, just update FPSR
 								end if;
 							when x"05" =>  -- Division by zero
 								if fpcr(10) = '1' then  -- DZ enable bit
-									fpu_exception <= '1';  -- Generate trap
+									fpu_exception_i <= '1';  -- Generate trap
 								else
-									fpu_exception <= '0';  -- No trap, just update FPSR
+									fpu_exception_i <= '0';  -- No trap, just update FPSR
 								end if;
 							when x"0C" =>  -- Invalid operation (OPERR)
 								if fpcr(13) = '1' then  -- OPERR enable bit  
-									fpu_exception <= '1';  -- Generate trap
+									fpu_exception_i <= '1';  -- Generate trap
 								else
-									fpu_exception <= '0';  -- No trap, just update FPSR
+									fpu_exception_i <= '0';  -- No trap, just update FPSR
 								end if;
 							when x"0D" =>  -- Overflow
 								if fpcr(12) = '1' then  -- OVFL enable bit
-									fpu_exception <= '1';  -- Generate trap
+									fpu_exception_i <= '1';  -- Generate trap
 								else
-									fpu_exception <= '0';  -- No trap, just update FPSR
+									fpu_exception_i <= '0';  -- No trap, just update FPSR
 								end if;
 							when x"0E" =>  -- Underflow
 								if fpcr(11) = '1' then  -- UNFL enable bit
-									fpu_exception <= '1';  -- Generate trap
+									fpu_exception_i <= '1';  -- Generate trap
 								else
-									fpu_exception <= '0';  -- No trap, just update FPSR
+									fpu_exception_i <= '0';  -- No trap, just update FPSR
 								end if;
 							when x"0F" =>  -- Inexact result
 								if fpcr(9) = '1' then  -- INEX2 enable bit
-									fpu_exception <= '1';  -- Generate trap
+									fpu_exception_i <= '1';  -- Generate trap
 								else
-									fpu_exception <= '0';  -- No trap, just update FPSR
+									fpu_exception_i <= '0';  -- No trap, just update FPSR
 								end if;
 							when others =>
 								-- For other exceptions, always generate trap
-								fpu_exception <= '1';
+								fpu_exception_i <= '1';
 						end case;
 						
 						-- Update FPIAR with exception instruction address if needed
@@ -3119,27 +3112,27 @@ begin
 								if fsave_data_request = '1' and fsave_data_index = 0 then
 									-- This is the final write for NULL frame
 									fpu_state <= FPU_IDLE;
-									fpu_done <= '1';
+									fpu_done_i <= '1';
 								end if;
 							when X"60" =>
 								-- MC68882 IDLE frame complete after specified longwords
 								if fsave_data_request = '1' and fsave_data_index = IDLE_FRAME_SIZE then
 									-- This is the final write for IDLE frame
 									fpu_state <= FPU_IDLE;
-									fpu_done <= '1';
+									fpu_done_i <= '1';
 								end if;
 							when X"D8" =>
 								-- MC68882 BUSY frame complete after specified longwords  
 								if fsave_data_request = '1' and fsave_data_index = BUSY_FRAME_SIZE then
 									-- This is the final write for BUSY frame
 									fpu_state <= FPU_IDLE;
-									fpu_done <= '1';
+									fpu_done_i <= '1';
 								end if;
 							when others =>
 								-- Unknown frame format - default to IDLE completion
 								if fsave_data_request = '1' and fsave_data_index = IDLE_FRAME_SIZE then
 									fpu_state <= FPU_IDLE;
-									fpu_done <= '1';
+									fpu_done_i <= '1';
 								end if;
 						end case;
 					
@@ -3170,13 +3163,13 @@ begin
 											-- Per Musashi: next FSAVE after FRESTORE NULL should also be NULL
 											fpu_just_reset <= '1';
 											fpu_state <= FPU_IDLE;
-											fpu_done <= '1';
+											fpu_done_i <= '1';
 
 										when x"01" =>
 											-- $01: Busy frame - FPU was busy when FSAVE was called (4 bytes)
 											-- Restore to idle state since operation was interrupted
 											fpu_state <= FPU_IDLE;
-											fpu_done <= '1';
+											fpu_done_i <= '1';
 											
 										when x"18" =>
 											-- $18: Short real frame (24 bytes) - partial context
@@ -3196,7 +3189,7 @@ begin
 											
 										when others =>
 											-- Invalid format - trigger format error exception
-											fpu_exception <= '1';
+											fpu_exception_i <= '1';
 											exception_code_internal <= x"0A";  -- Format error
 											fpu_state <= FPU_EXCEPTION_STATE;
 									end case;
@@ -3240,7 +3233,7 @@ begin
 										when x"18" =>
 											-- $18 frame complete (24 bytes: 6 longwords) - short real frame
 											fpu_state <= FPU_IDLE;
-											fpu_done <= '1';
+											fpu_done_i <= '1';
 										when x"41" | x"60" =>
 											-- $41/$60 IDLE frame - NO FP register data, just padding
 											-- Skip to end (frame is 60 bytes = 15 longwords, indices 0-14)
@@ -3254,7 +3247,7 @@ begin
 										when others =>
 											-- Unknown frame format
 											fpu_state <= FPU_IDLE;
-											fpu_done <= '1';
+											fpu_done_i <= '1';
 									end case;
 
 								when 4 to 14 =>
@@ -3265,7 +3258,7 @@ begin
 										if fsave_counter = 14 then
 											-- IDLE frame complete (60 bytes = 15 longwords, indices 0-14)
 											fpu_state <= FPU_IDLE;
-											fpu_done <= '1';
+											fpu_done_i <= '1';
 										else
 											fsave_counter <= fsave_counter + 1;
 										end if;
@@ -3287,7 +3280,7 @@ begin
 											if fsave_counter = NORMAL_FRAME_END then
 												-- Complete at index 23 (last longword)
 												fpu_state <= FPU_IDLE;
-												fpu_done <= '1';
+												fpu_done_i <= '1';
 											else
 												fsave_counter <= fsave_counter + 1;
 											end if;
@@ -3327,7 +3320,7 @@ begin
 													if fsave_counter = BUSY_FRAME_SIZE then
 														-- Complete at index 53 (last longword of BUSY frame)
 														fpu_state <= FPU_IDLE;
-														fpu_done <= '1';
+														fpu_done_i <= '1';
 													else
 														fsave_counter <= fsave_counter + 1;
 													end if;
@@ -3337,7 +3330,7 @@ begin
 											-- Complete at maximum frame size
 											if fsave_counter = BUSY_FRAME_SIZE then
 												fpu_state <= FPU_IDLE;
-												fpu_done <= '1';
+												fpu_done_i <= '1';
 											else
 												fsave_counter <= fsave_counter + 1;
 											end if;
@@ -3346,7 +3339,7 @@ begin
 								when others =>
 									-- Unexpected counter value - complete operation
 									fpu_state <= FPU_IDLE;
-									fpu_done <= '1';
+									fpu_done_i <= '1';
 							end case;
 						end if;
 						
@@ -3443,7 +3436,7 @@ begin
 						-- Stay in FMOVEM state until CPU finishes operation
 						if fpu_enable = '0' or movem_done = '1' then
 							fpu_state <= FPU_IDLE;
-							fpu_done <= '1';
+							fpu_done_i <= '1';
 						end if;
 						
 					when FPU_FMOVEM_CR =>
@@ -3501,7 +3494,7 @@ begin
 						-- Control register operations complete when CPU signals completion
 						if fpu_enable = '0' or movem_done = '1' then
 							fpu_state <= FPU_IDLE;
-							fpu_done <= '1';
+							fpu_done_i <= '1';
 						end if;
 						
 				end case;
@@ -3510,35 +3503,30 @@ begin
 				-- This monitors for various protocol violations and addressing errors
 				
 				-- Check for invalid CIR address access
+				-- Note: cir_protocol_error now driven only by CIR Handler process
 				if (cir_read = '1' or cir_write = '1') and to_integer(unsigned(cir_address)) > 8 then
-					-- cir_address_error driven by main state machine
-					cir_protocol_error <= '1';
-					fpu_exception <= '1';
+					fpu_exception_i <= '1';
 					exception_code_internal <= X"0E";  -- Address error exception
 				end if;
-				
+
 				-- Check for write attempts to read-only CIR registers
+				-- Note: cir_protocol_error now driven only by CIR Handler process
 				if cir_write = '1' then
 					case cir_address is
 						when "00000" =>  -- Response CIR - read-only
-							cir_protocol_error <= '1';
-							fpu_exception <= '1';
+							fpu_exception_i <= '1';
 							exception_code_internal <= X"0C";  -- Protocol violation
 						when "00010" =>  -- Condition CIR - read-only
-							cir_protocol_error <= '1';
-							fpu_exception <= '1';
+							fpu_exception_i <= '1';
 							exception_code_internal <= X"0C";  -- Protocol violation
 						when "00011" =>  -- Save CIR - read-only
-							cir_protocol_error <= '1';
-							fpu_exception <= '1';
+							fpu_exception_i <= '1';
 							exception_code_internal <= X"0C";  -- Protocol violation
 						when "00110" =>  -- Operation Word CIR - read-only
-							cir_protocol_error <= '1';
-							fpu_exception <= '1';
+							fpu_exception_i <= '1';
 							exception_code_internal <= X"0C";  -- Protocol violation
 						when "00111" | "01000" =>  -- Command Address CIR - read-only
-							cir_protocol_error <= '1';
-							fpu_exception <= '1';
+							fpu_exception_i <= '1';
 							exception_code_internal <= X"0C";  -- Protocol violation
 						when others => null;  -- Valid write-only registers
 					end case;
@@ -3549,44 +3537,40 @@ begin
 					-- Additional error analysis based on error type
 					if restore_privilege_violation = '1' then
 						-- FSAVE/FRESTORE privilege violation
-						fpu_exception <= '1';
+						fpu_exception_i <= '1';
 						exception_code_internal <= X"08";  -- Privilege violation
 					elsif cir_address_error = '1' then
 						-- Invalid CIR register access
-						fpu_exception <= '1';
+						fpu_exception_i <= '1';
 						exception_code_internal <= X"0E";  -- Address error
 					else
 						-- General protocol error
-						fpu_exception <= '1';
+						fpu_exception_i <= '1';
 						exception_code_internal <= X"0C";  -- Protocol violation
 					end if;
 				end if;
 				
 				-- Check for operation timing violations
+				-- Note: cir_protocol_error now driven only by CIR Handler process
 				if state_timeout_counter > CIR_TIMEOUT_LIMIT then
-					cir_protocol_error <= '1';
-					fpu_exception <= '1';
+					fpu_exception_i <= '1';
 					exception_code_internal <= X"0F";  -- Timeout error
-					-- Reset timeout to prevent continuous exceptions
-					-- REMOVED: state_timeout_counter assignment to avoid multiple drivers
 				end if;
-				
+
 				-- Global CIR command handling that applies to all states
 				-- Handle CIR reset and cancel commands (can occur in any state)
+				-- Note: cir_protocol_error now driven only by CIR Handler process
 				if command_cir = X"0002" then  -- Reset command
 					-- Clear all error states on reset
-					cir_protocol_error <= '0';
 					cir_address_error <= '0';
-					-- restore_privilege_violation driven by main state machine
 					fpu_state <= FPU_IDLE;
-					fpu_exception <= '0';
-					fpu_done <= '0';
+					fpu_exception_i <= '0';
+					fpu_done_i <= '0';
 				elsif command_cir = X"0003" then  -- Cancel current operation
 					-- Clear error states on cancel
-					cir_protocol_error <= '0';
 					cir_address_error <= '0';
 					fpu_state <= FPU_IDLE;
-					fpu_done <= '1';  -- Signal completion
+					fpu_done_i <= '1';  -- Signal completion
 				end if;
 			end if;
 		end if;
@@ -3656,7 +3640,7 @@ begin
 			save_cir <= (others => '0');
 			restore_cir <= (others => '0');
 			-- REMOVED: cir_data_out assignment to avoid multiple drivers
-			cir_data_valid <= '0';
+			cir_data_valid_i <= '0';
 			cir_read_reg <= '0';  -- EDGE-TRIGGER FIX: Initialize registered cir_read
 			
 			-- FIX ITEMS 58-62: Reset enhanced CIR protocol signals
@@ -3701,10 +3685,10 @@ begin
 				-- FIX ITEM 58: Enhanced edge detection for CIR protocol race conditions
 				-- Use registered signals to prevent combinational race conditions
 				if cir_read = '1' and cir_read_reg = '0' then
-					cir_data_valid <= '1';
+					cir_data_valid_i <= '1';
 					cir_read_active <= '1';  -- Track active read cycle
 				elsif cir_read = '0' and cir_read_reg = '1' then
-					cir_data_valid <= '0';
+					cir_data_valid_i <= '0';
 					cir_read_active <= '0';  -- Clear active read cycle
 				end if;
 				
@@ -3713,7 +3697,7 @@ begin
 					cir_timeout_counter <= cir_timeout_counter + 1;
 					-- Reset after 1000 cycles to prevent indefinite waits
 					if cir_timeout_counter > 1000 then
-						cir_data_valid <= '0';
+						cir_data_valid_i <= '0';
 						cir_read_active <= '0';
 						response_cir <= PRIM_NULL;  -- End dialog on timeout
 						cir_timeout_counter <= 0;
@@ -3803,16 +3787,16 @@ begin
 				if cir_read = '1' then
 					-- REMOVED: All cir_data_out assignments to avoid multiple drivers
 					-- cir_data_out is now driven by combinational logic based on cir_address
-					cir_data_valid <= '1';
+					cir_data_valid_i <= '1';
 				else
 					-- CRITICAL FSAVE FIX: Clear data valid when not reading
 					-- This prevents stale data from interfering with frame size detection
-					cir_data_valid <= '0';
+					cir_data_valid_i <= '0';
 				end if;
 				
 				-- Clear command_pending when FPU has processed the command
 				-- This prevents multiple driver conflicts with the main state machine
-				if command_pending = '1' and (fpu_state = FPU_DECODE or fpu_state = FPU_EXCEPTION_STATE or fpu_done = '1') then
+				if command_pending = '1' and (fpu_state = FPU_DECODE or fpu_state = FPU_EXCEPTION_STATE or fpu_done_i = '1') then
 					command_pending <= '0';
 				end if;
 				
@@ -3939,7 +3923,7 @@ begin
 				-- FIX ITEM 60: Enhanced state machine handling with timeout management
 				case fpu_state is
 					when FPU_IDLE =>
-						if fpu_done = '1' then
+						if fpu_done_i = '1' then
 							-- Operation complete - return NULL primitive to end dialog
 							response_cir <= PRIM_NULL;
 							-- REMOVED: state_timeout_counter assignment to avoid multiple drivers
@@ -3990,7 +3974,7 @@ begin
 					when FPU_FETCH_SOURCE =>
 						-- CRITICAL FIX: Proper CIR handshake timing with transfer validation
 						-- Check if required data transfer is complete with proper handshaking
-						if cir_write = '1' and cir_address = "00101" and cir_data_valid = '1' then
+						if cir_write = '1' and cir_address = "00101" and cir_data_valid_i = '1' then
 							-- Operand received with valid data - acknowledge and proceed
 							response_cir <= PRIM_NULL;  -- NULL - proceed to execution
 							-- REMOVED: state_timeout_counter assignment to avoid multiple drivers
@@ -4012,7 +3996,7 @@ begin
 						-- CRITICAL FIX: Proper result transfer handshaking
 						if decoder_instruction_type = INST_FMOVE_FP then
 							-- FP register to memory - check if CPU has read result
-							if cir_read = '1' and cir_address = "00110" and cir_data_valid = '1' then
+							if cir_read = '1' and cir_address = "00110" and cir_data_valid_i = '1' then
 								-- Result successfully transferred to CPU
 								response_cir <= PRIM_NULL;  -- NULL - transfer complete
 								-- REMOVED: state_timeout_counter assignment to avoid multiple drivers
@@ -4085,10 +4069,7 @@ begin
 	-- IMPROVE: Enhanced Register File Management (integrated into main process)
 	-- Register file allocation tracking and validation signals are available for future use
 	-- Main fp_registers assignments are handled in the main state machine process to avoid multiple drivers
-	
-	-- Enhanced register file read logic - combinational for immediate access
-	fp_reg_read_data <= fp_registers(to_integer(unsigned(fp_reg_read_addr))) when 
-						to_integer(unsigned(fp_reg_read_addr)) <= 7 else IEEE_NaN;
+	-- Note: fp_reg_read_data concurrent assignment removed - now driven by register_file_manager process
 
 	-- IMPROVE: Enhanced FPCR/FPSR Validation and Control (integrated into main process)
 	-- FPCR/FPSR validation and control signals are available for future use
@@ -4102,61 +4083,9 @@ begin
 	-- - fpsr_condition_code_valid
 	-- - fpsr_exception_pending
 
-	-- ACTUAL IMPLEMENTATION: FPCR Bit Field Validation Enforcement Process
-	-- This process actually uses the validation signals to control FPU operations
-	-- instead of just setting them cosmetically
-	process(clk, nReset)
-	begin
-		if nReset = '0' then
-			fpcr_write_pending <= '0';
-		elsif rising_edge(clk) then
-			if clkena = '1' then
-				-- Clear write pending flag when operation starts
-				if fpu_state = FPU_DECODE then
-					fpcr_write_pending <= '0';
-				end if;
-				
-				-- ACTUAL IMPLEMENTATION: Enforce FPCR validation during operations
-				-- Check if current FPCR configuration is valid before allowing operations
-				if fpu_state = FPU_EXECUTE then
-					-- Validate rounding mode before arithmetic operations
-					if fpcr_rounding_mode_valid = '0' then
-						-- Invalid rounding mode - force default and potentially trigger exception
-						-- REMOVED: fpcr bit assignments to avoid multiple driver conflicts
-						-- fpcr_rounding_mode_valid driven by main state machine
-						-- fpcr_write_pending driven by main state machine
-						-- REMOVED: Exception signal assignments to avoid multiple drivers
-						-- Exception generation moved to main state machine
-					end if;
-					
-					-- Validate precision control before arithmetic operations
-					if fpcr_precision_valid = '0' then
-						-- Invalid precision control - force default and potentially trigger exception  
-						-- REMOVED: fpcr bit assignments to avoid multiple driver conflicts
-						-- fpcr_precision_valid driven by main state machine  
-						-- fpcr_write_pending driven by main state machine
-						-- REMOVED: Exception signal assignments to avoid multiple drivers
-						-- Exception generation moved to main state machine
-					end if;
-				end if;
-				
-				-- ACTUAL IMPLEMENTATION: Use validated FPCR values in ALU operations
-				-- Provide validated rounding mode and precision to ALU
-				case fpu_state is
-					when FPU_EXECUTE =>
-						-- Only allow operation if FPCR is valid, otherwise wait for correction
-						if fpcr_valid = '0' and not (fpcr_rounding_mode_valid = '1' and fpcr_precision_valid = '1') then
-							-- REMOVED: fpcr assignment to avoid multiple drivers
-							-- FPCR correction is handled by main state machine
-							-- Force validation status update
-							fpcr_valid <= '1';
-						end if;
-					when others =>
-						null;
-				end case;
-			end if;
-		end if;
-	end process;
+	-- REMOVED: FPCR Bit Field Validation Enforcement Process
+	-- Process removed to avoid multiple driver conflicts for fpcr_valid and fpcr_write_pending
+	-- All FPCR validation is now handled by the main state_machine process
 
 	-- IMPROVE: Enhanced CIR Protocol Validation Process
 	-- Implements comprehensive coprocessor interface validation
@@ -4187,9 +4116,9 @@ begin
 						end if;
 						
 					when 2 =>  -- OPERATION_ACTIVE - monitor operation progress
-						if fpu_done = '1' then
+						if fpu_done_i = '1' then
 							cir_handshake_state := 3;  -- Operation complete
-						elsif fpu_exception = '1' then
+						elsif fpu_exception_i = '1' then
 							cir_handshake_state := 4;  -- Exception occurred
 						end if;
 						
@@ -4242,5 +4171,10 @@ begin
 				cir_data_out <= (others => '0');  -- Reserved registers read as zero
 		end case;
 	end process;
+
+	-- Connect internal signals to output ports
+	fpu_done <= fpu_done_i;
+	fpu_exception <= fpu_exception_i;
+	cir_data_valid <= cir_data_valid_i;
 
 end rtl;

@@ -28,7 +28,7 @@ use ieee.std_logic_unsigned.all;
 
 entity TG68K is
    generic(
-      CPU           : std_logic_vector(1 downto 0):="01";  -- 00->68000  01->68010  10->68030
+      CPU           : std_logic_vector(1 downto 0):="01";  -- 00->68000  01->68010  10->68020  11->68030
       FPU_Enable    : integer := 1  -- 0=>no FPU, 1=>FPU enabled
    );
    port(        
@@ -297,7 +297,7 @@ cpu1: TG68KdotC_Kernel
       FPU_Enable => FPU_Enable   --0=>no FPU,   1=>FPU enabled
    )
    PORT MAP(
-      CPU => CPU,                -- : in std_logic_vector(1 downto 0):="01";  -- 00->68000  01->68010  10->68030
+      CPU => CPU,                -- : in std_logic_vector(1 downto 0):="01";  -- 00->68000  01->68010  10->68020  11->68030
       clk => CLK,                -- : in std_logic;
       nReset => cpu1reset,       -- : in std_logic:='1';       --low active
       clkena_in => clkena,       -- : in std_logic:='1';
