@@ -748,7 +748,7 @@ BEGIN
     );
 
   -- FPU (68881/68882) instance
-  FPU_GEN: if FPU_Enable = 1 generate
+  FPU_GEN: if true generate  -- Hardcoded for testing (was: FPU_Enable = 1)
     FPU: TG68K_FPU
       port map(
         clk                  => clk,
@@ -812,7 +812,7 @@ BEGIN
     end if;
   end process;
 
-  FPU_DISABLE: if FPU_Enable = 0 generate
+  FPU_DISABLE: if false generate  -- Disabled for testing (was: FPU_Enable = 0)
     fpu_enable_sig <= '0';
     fpu_busy <= '0';
     fpu_complete <= '0';
@@ -4595,14 +4595,9 @@ PROCESS (clk, cpu, OP1out, OP2out, opcode, exe_condition, nextpass, micro_state,
 						-- Valid EA mode for cpRESTORE
 						IF SVmode='1' THEN
 							IF opcode(11 downto 9)="001" THEN  -- FPU coprocessor (ID=001)
-								IF FPU_Enable=1 THEN
-									-- Route to FPU FRESTORE handler
-									set(get_2ndOPC) <= '1';
-									next_micro_state <= fpu1;
-								ELSE
-									trap_1111 <= '1';  -- F-line exception (no FPU)
-									trapmake <= '1';
-								END IF;
+								-- Route to FPU FRESTORE handler (FPU always enabled for testing)
+								set(get_2ndOPC) <= '1';
+								next_micro_state <= fpu1;
 							ELSE
 								trap_1111 <= '1';  -- Other coprocessors - F-line exception
 								trapmake <= '1';
@@ -4615,8 +4610,8 @@ PROCESS (clk, cpu, OP1out, OP2out, opcode, exe_condition, nextpass, micro_state,
 				ELSE
 					-- Unrecognized F-line instruction (cpGEN, cpBcc, etc.)
 					-- Check if this is an FPU instruction (coprocessor ID = 001)
-					IF opcode(11 downto 9)="001" AND FPU_Enable=1 THEN
-						-- Route to FPU handler
+					IF opcode(11 downto 9)="001" THEN
+						-- Route to FPU handler (FPU always enabled for testing)
 						IF decodeOPC='1' THEN
 							set(get_2ndOPC) <= '1';
 							next_micro_state <= fpu1;
