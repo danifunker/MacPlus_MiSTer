@@ -544,6 +544,7 @@ wire        tg68_vma_n;
 wire        tg68_fc0;
 wire        tg68_fc1;
 wire        tg68_fc2;
+wire        tg68_fc3;
 wire [15:0] tg68_dout;
 wire [31:0] tg68_a;
 wire        tg68_reset_n;
