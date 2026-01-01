@@ -1214,7 +1214,7 @@ ALU: TG68K_ALU
 	-- This enables FPU detection by pre-1992 Mac ROMs that read Response CIR at FC7:$22000
 	-- Note: Uses same FC logic as FC output assignment to determine effective FC
 	--       (includes MOVES SFC/DFC override). FPU_Enable is a generic constant.
-	cir_detection: process(fc_internal, micro_state, moves_bus_pending, brief, SFC, DFC, addr, state)
+	cir_detection: process(fc_internal, micro_state, moves_bus_pending, brief, SFC, DFC, addr, state, cpu)
 		variable fc_is_cpu_space : std_logic;
 		variable addr_is_cir_range : std_logic;
 		variable coproc_is_fpu : std_logic;
