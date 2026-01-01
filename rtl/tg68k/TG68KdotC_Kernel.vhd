@@ -277,6 +277,7 @@ architecture logic of TG68KdotC_Kernel is
 	signal opcode				: std_logic_vector(15 downto 0);
 	signal exe_opcode			: std_logic_vector(15 downto 0);
 	signal sndOPC				: std_logic_vector(15 downto 0);
+	signal sndOPC_valid			: std_logic := '0';  -- Extension word validity flag for FPU/PMMU timing
 
 	signal exe_pc				: std_logic_vector(31 downto 0);--TH
 	signal last_opc_pc		: std_logic_vector(31 downto 0);--TH
@@ -791,19 +792,33 @@ BEGIN
   end generate FPU_GEN;
 
   -- FPU enable signal control process
-  process(clk, nReset, micro_state, opcode, clkena_in)
+  -- CRITICAL FIX: Enable FPU when ENTERING states (next_micro_state) not just when IN states
+  -- This fixes the chicken-and-egg timing deadlock where FPU couldn't activate because
+  -- fpu_enable_sig was only set after already being in FPU states.
+  -- Also adds CPU type check: FPU only for 68020 (cpu="10") and 68030 (cpu="11")
+  process(clk, nReset)
   begin
     if nReset = '0' then
       fpu_enable_sig <= '0';  -- Initialize FPU enable signal to inactive
     elsif rising_edge(clk) then
       if clkena_in = '1' then
-        -- Enable FPU ONLY during FPU microcode states AND F-line instructions
-        -- CRITICAL FIX: Don't enable FPU for non-F-line instructions
-        if (micro_state = fpu1 or micro_state = fpu2 or micro_state = fpu_wait or
-            micro_state = fpu_done or micro_state = fpu_fmovem or micro_state = fpu_fmovem_cr or
-            micro_state = fpu_fdbcc) AND
+        -- Enable FPU when:
+        -- 1. CPU is 68020 or 68030 (cpu(1)='1')
+        -- 2. Opcode is F-line FPU instruction
+        -- 3. Either ENTERING (next_micro_state) or IN (micro_state) FPU states
+        if cpu(1) = '1' AND  -- 68020/68030 only (not 68000/68010)
            (opcode(15 downto 12) = "1111" AND
-            (opcode(11 downto 9) = "001" OR opcode(8 downto 6) = "000" OR opcode(8 downto 6) = "100")) then
+            (opcode(11 downto 9) = "001" OR    -- FPU general (0xF200-0xF3FF)
+             opcode(8 downto 6) = "100" OR     -- FSAVE
+             opcode(8 downto 6) = "101")) AND  -- FRESTORE
+           ((next_micro_state = fpu1 or next_micro_state = fpu2 or
+             next_micro_state = fpu_wait or next_micro_state = fpu_done or
+             next_micro_state = fpu_fmovem or next_micro_state = fpu_fmovem_cr or
+             next_micro_state = fpu_fdbcc) OR
+            (micro_state = fpu1 or micro_state = fpu2 or
+             micro_state = fpu_wait or micro_state = fpu_done or
+             micro_state = fpu_fmovem or micro_state = fpu_fmovem_cr or
+             micro_state = fpu_fdbcc)) then
           fpu_enable_sig <= '1';
         else
           fpu_enable_sig <= '0';
@@ -1244,21 +1259,22 @@ ALU: TG68K_ALU
 		-- cir_cpu_space_access <= fc_is_cpu_space and addr_is_cir_range;  -- Removed: signal unused
 		-- cir_fpu_coprocessor <= coproc_is_fpu;  -- Removed: signal unused
 
-		-- Valid CIR access: CPU space + CIR range + FPU coprocessor + FPU enabled
-		-- (Hardcoded FPU enabled for testing - was: FPU_Enable = 1)
+		-- Valid CIR access: CPU space + CIR range + FPU coprocessor + 68020/68030 CPU
+		-- CIR coprocessor protocol only exists on 68020+ (not 68000/68010)
+		-- cpu(1)='1' selects 68020 (cpu="10") and 68030 (cpu="11")
 		if fc_is_cpu_space = '1' and addr_is_cir_range = '1' and
-		   coproc_is_fpu = '1' then
+		   coproc_is_fpu = '1' and cpu(1) = '1' then
 			cir_access_valid <= '1';
 		else
 			cir_access_valid <= '0';
 		end if;
 
-		-- Bus error condition: CIR access but FPU disabled or wrong coprocessor ID
+		-- Bus error condition: CIR access but wrong coprocessor ID or unsupported CPU
 		-- This implements the hardware behavior where accessing non-existent coprocessor
 		-- causes bus error (timeout on real hardware)
-		-- (Hardcoded FPU enabled for testing - was: FPU_Enable = 0)
+		-- Also generates bus error on 68000/68010 which don't have coprocessor interface
 		if fc_is_cpu_space = '1' and addr_is_cir_range = '1' and
-		   coproc_is_fpu = '0' then
+		   (coproc_is_fpu = '0' or cpu(1) = '0') then
 			cir_access_berr <= '1';
 		else
 			cir_access_berr <= '0';
@@ -4597,12 +4613,13 @@ PROCESS (clk, cpu, OP1out, OP2out, opcode, exe_condition, nextpass, micro_state,
 					ELSE
 						-- Valid EA mode for cpRESTORE
 						IF SVmode='1' THEN
-							IF opcode(11 downto 9)="001" THEN  -- FPU coprocessor (ID=001)
-								-- Route to FPU FRESTORE handler (FPU always enabled for testing)
+							-- FPU coprocessor (ID=001) - only for 68020/68030
+							IF cpu(1)='1' AND opcode(11 downto 9)="001" THEN
+								-- Route to FPU FRESTORE handler
 								set(get_2ndOPC) <= '1';
 								next_micro_state <= fpu1;
 							ELSE
-								trap_1111 <= '1';  -- Other coprocessors - F-line exception
+								trap_1111 <= '1';  -- 68000/68010 or other coprocessors - F-line exception
 								trapmake <= '1';
 							END IF;
 						ELSE
@@ -4613,15 +4630,16 @@ PROCESS (clk, cpu, OP1out, OP2out, opcode, exe_condition, nextpass, micro_state,
 				ELSE
 					-- Unrecognized F-line instruction (cpGEN, cpBcc, etc.)
 					-- Check if this is an FPU instruction (coprocessor ID = 001)
-					IF opcode(11 downto 9)="001" THEN
-						-- Route to FPU handler (FPU always enabled for testing)
+					-- Only route to FPU for 68020 (cpu="10") and 68030 (cpu="11")
+					IF cpu(1)='1' AND opcode(11 downto 9)="001" THEN
+						-- Route to FPU handler for 68020/68030
 						IF decodeOPC='1' THEN
 							set(get_2ndOPC) <= '1';
 							next_micro_state <= fpu1;
 						END IF;
 					ELSE
-						-- FPU/coprocessor instructions without hardware support
-						-- MC68030: F-line exception (vector 11) regardless of supervisor/user mode
+						-- 68000/68010 or unsupported coprocessor
+						-- F-line exception (vector 11) regardless of supervisor/user mode
 						trap_1111 <= '1';
 						trapmake <= '1';
 					END IF;
@@ -6291,23 +6309,28 @@ PROCESS (clk, cpu, OP1out, OP2out, opcode, exe_condition, nextpass, micro_state,
 					-- MC68020 cpGEN Protocol Implementation
 					-- Step 1: Write instruction command word to Command CIR
 					-- Step 2: Read Response CIR for coprocessor status and response primitives
-					
+
+					-- CRITICAL FIX: Wait for extension word (sndOPC) to be valid before processing
+					-- This prevents using stale/invalid extension word data in FPU decode
+					IF sndOPC_valid = '0' THEN
+						-- Extension word not ready yet, stay in fpu1 and wait
+						next_micro_state <= fpu1;
 					-- Check instruction type and follow appropriate MC68020 coprocessor protocol
-					IF opcode(8 downto 6) = "000" THEN
+					ELSIF opcode(8 downto 6) = "000" THEN
 						-- cpGEN instruction - follow MC68020 coprocessor protocol
 						-- CRITICAL FIX: Check R/M bit to avoid memory fetch for register-source operations
 						IF state = "00" THEN
 							-- Phase 1: Write command word to Command CIR (register 0x01)
 							-- CPU space cycle with FC=111, A4-A0=00001 (Command register)
 							setstate <= "01";  -- Write cycle to coprocessor
-							
+
 							-- Always proceed to fpu2 for proper CIR protocol compliance
 							-- The FPU will determine based on R/M bit whether to request operand or complete
 							next_micro_state <= fpu2;
 							-- skipFetch_next <= '1';  -- Removed: signal unused
 						END IF;
 						-- IMPORTANT: No addressing mode processing for cpGEN - exit here
-						
+
 					ELSIF opcode(8 downto 6) = "001" OR opcode(8 downto 6) = "010" OR opcode(8 downto 6) = "011" THEN
 						-- Conditional instructions (FDBcc, FScc, FTRAPcc) - follow conditional protocol
 						IF state = "00" THEN
@@ -7952,15 +7975,19 @@ PROCESS (exe_opcode, Flags)
 	END PROCESS;
 	
 -----------------------------------------------------------------------------
--- Movem
+-- Movem and Extension Word (sndOPC) Capture
 -----------------------------------------------------------------------------
 PROCESS (clk)
 	BEGIN
 		IF rising_edge(clk) THEN
-			IF clkena_lw='1' THEN
-				movem_actiond <= exec(movem_action); 
+			IF nReset = '0' THEN
+				sndOPC_valid <= '0';
+			ELSIF clkena_lw='1' THEN
+				movem_actiond <= exec(movem_action);
 				IF decodeOPC='1' THEN
 					sndOPC <= data_read(15 downto 0);
+					-- Extension word is now valid for FPU/PMMU use
+					sndOPC_valid <= '1';
 				ELSIF exec(movem_action)='1' OR set(movem_action) ='1' THEN
 					CASE movem_regaddr IS
 						WHEN "0000" => sndOPC(0)  <= '0';
@@ -7981,6 +8008,11 @@ PROCESS (clk)
 						WHEN "1111" => sndOPC(15) <= '0';
 						WHEN OTHERS => NULL;
 					END CASE;
+				END IF;
+				-- Clear validity when new extension word is requested
+				-- This ensures FPU waits for fresh extension word
+				IF set(get_2ndOPC)='1' THEN
+					sndOPC_valid <= '0';
 				END IF;
 			END IF;
 		END IF;
