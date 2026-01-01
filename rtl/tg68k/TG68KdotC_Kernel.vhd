@@ -7742,25 +7742,43 @@ PROCESS (clk, cpu, OP1out, OP2out, opcode, exe_condition, nextpass, micro_state,
 		  when X"000" => SFC <= reg_QA(2 downto 0); -- SFC -- 68010+
 		  when X"001" => DFC <= reg_QA(2 downto 0); -- DFC -- 68010+
 		  when X"002" =>
-		    -- Write to CACR with proper MC68030 behavior
-		    -- MC68030 uses CACR bits for cache invalidation (no CINV/CPUSH instructions):
-		    --   Bit 0: EI - Enable Instruction Cache (sticky)
-		    --   Bit 1: FI - Freeze Instruction Cache (sticky)
+		    -- Write to CACR with CPU-type-specific masking
+		    -- This is CRITICAL for correct CPU detection by software!
+		    -- Software detects 68020 vs 68030 by writing to CACR and reading back:
+		    --   68020: Only bits 0-3 are accepted (mask 0x0F)
+		    --   68030: Bits 0-4 and 8-13 are accepted (mask 0x3F1F)
+		    --
+		    -- MC68020 CACR (4 bits):
+		    --   Bit 0: E - Enable Cache
+		    --   Bit 1: F - Freeze Cache
+		    --   Bit 2: CE - Clear Entry (self-clearing)
+		    --   Bit 3: C - Clear Cache (self-clearing)
+		    --
+		    -- MC68030 CACR (14 bits):
+		    --   Bit 0: EI - Enable Instruction Cache
+		    --   Bit 1: FI - Freeze Instruction Cache
 		    --   Bit 2: CEI - Clear Entry in I-Cache (self-clearing)
 		    --   Bit 3: CI - Clear Instruction Cache (self-clearing)
-		    --   Bit 4: IBE - Instruction Burst Enable (sticky)
-		    --   Bit 8: ED - Enable Data Cache (sticky)
-		    --   Bit 9: FD - Freeze Data Cache (sticky)
+		    --   Bit 4: IBE - Instruction Burst Enable
+		    --   Bit 5-7: Reserved (must be 0)
+		    --   Bit 8: ED - Enable Data Cache
+		    --   Bit 9: FD - Freeze Data Cache
 		    --   Bit 10: CED - Clear Entry in D-Cache (self-clearing)
 		    --   Bit 11: CD - Clear Data Cache (self-clearing)
-		    --   Bit 12: DBE - Data Burst Enable (sticky)
-		    --   Bit 13: WA - Write Allocate (sticky)
-		    -- Self-clearing bits MUST be written to trigger cache_inv_req
-		    -- They auto-clear on the next clkena_lw cycle
-		    CACR(4 downto 0) <= reg_QA(4 downto 0);   -- EI, FI, CEI, CI, IBE
-		    CACR(7 downto 5) <= (others => '0');       -- Reserved bits
-		    CACR(13 downto 8) <= reg_QA(13 downto 8); -- ED, FD, CED, CD, DBE, WA
-		    CACR(31 downto 14) <= (others => '0');     -- Reserved bits
+		    --   Bit 12: DBE - Data Burst Enable
+		    --   Bit 13: WA - Write Allocate
+		    --
+		    if cpu = "11" then
+		      -- MC68030: Accept bits 0-4 and 8-13 (mask 0x3F1F)
+		      CACR(4 downto 0) <= reg_QA(4 downto 0);   -- EI, FI, CEI, CI, IBE
+		      CACR(7 downto 5) <= (others => '0');       -- Reserved bits (must be 0)
+		      CACR(13 downto 8) <= reg_QA(13 downto 8); -- ED, FD, CED, CD, DBE, WA
+		      CACR(31 downto 14) <= (others => '0');     -- Reserved bits
+		    else
+		      -- MC68020: Accept only bits 0-3 (mask 0x0F)
+		      CACR(3 downto 0) <= reg_QA(3 downto 0);   -- E, F, CE, C
+		      CACR(31 downto 4) <= (others => '0');      -- All other bits must be 0
+		    end if;
 		  when X"800" => USP <= reg_QA; -- BUG #18: USP -- 68010+
 		  when X"801" => VBR <= reg_QA; -- 68010+
 		  when X"802" => CAAR <= reg_QA; -- CAAR -- 68020+
