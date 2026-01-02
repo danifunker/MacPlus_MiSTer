@@ -808,9 +808,10 @@ BEGIN
         -- 3. Either ENTERING (next_micro_state) or IN (micro_state) FPU states
         if cpu(1) = '1' AND  -- 68020/68030 only (not 68000/68010)
            (opcode(15 downto 12) = "1111" AND
-            (opcode(11 downto 9) = "001" OR    -- FPU general (0xF200-0xF3FF)
-             opcode(8 downto 6) = "100" OR     -- FSAVE
-             opcode(8 downto 6) = "101")) AND  -- FRESTORE
+            (opcode(11 downto 9) = "001" OR    -- FPU coprocessor ID
+             opcode(8 downto 6) = "000" OR     -- cpGEN (FMOVE, FADD, FSUB, etc.)
+             opcode(8 downto 6) = "100" OR     -- cpSAVE
+             opcode(8 downto 6) = "101")) AND  -- cpRESTORE
            ((next_micro_state = fpu1 or next_micro_state = fpu2 or
              next_micro_state = fpu_wait or next_micro_state = fpu_done or
              next_micro_state = fpu_fmovem or next_micro_state = fpu_fmovem_cr or
