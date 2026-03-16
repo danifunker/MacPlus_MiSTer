@@ -498,7 +498,7 @@ tg68k tg68k (
 	.reset      ( !_cpuReset ),
 	.phi1       ( cpu_en_p  ),
 	.phi2       ( cpu_en_n  ),
-	.cpu        ( 2'b00 ), // 68000 mode (TG68K only)
+	.cpu        ( 2'b11 ), // 68020 mode
 
 	.dtack_n    ( _cpuDTACK  ),
 	.rw_n       ( tg68_rw    ),
