@@ -436,6 +436,25 @@ wire vid_alt, loadPixels, pixelOut, _hblank, _vblank, hsync, vsync;
 wire memoryOverlayOn, selectSCSI, selectSCC, selectIWM, selectVIA, selectRAM, selectROM, selectSEOverlay;
 wire [15:0] dataControllerDataOut;
 
+// MC68881 FPU
+// Address decode: FC=7 (CPU space) + addr[31:16]=0x0002 + addr[15:13]=001 (cpID=1 for FPU)
+wire fpuAddrMatch = (cpuFC == 3'b111) && (tg68_a[31:16] == 16'h0002) && (tg68_a[15:13] == 3'b001);
+wire selectFPU = fpuAddrMatch && !_cpuAS;
+wire [31:0] fpu_data_out;
+wire fpu_dsack0_n, fpu_dsack1_n;
+wire fpu_sense_n;
+
+// CIR register address remapping: TG68K uses standard MC68881 register addresses,
+// but mc68881_top uses non-standard addresses for registers that overlap with
+// peripheral-mode registers (0-9). Remap the conflicting ones:
+//   Standard reg 0 (Response CIR)  -> mc68881_top reg 13
+//   Standard reg 2 (Save CIR)     -> mc68881_top reg 12
+//   Standard reg 3 (Restore CIR)  -> mc68881_top reg 28
+wire [4:0] fpu_addr_remapped = (tg68_a[5:1] == 5'd0) ? 5'd13 :
+                               (tg68_a[5:1] == 5'd2) ? 5'd12 :
+                               (tg68_a[5:1] == 5'd3) ? 5'd28 :
+                               tg68_a[5:1];
+
 // audio
 wire snd_alt;
 wire loadSound;
@@ -459,8 +478,11 @@ always @(posedge clk_sys) begin
 	end
 end
 
-assign      _cpuVPA = (cpuFC == 3'b111) ? 1'b0 : ~(!_cpuAS && cpuAddr[23:21] == 3'b111);
-assign      _cpuDTACK = ~(!_cpuAS && cpuAddr[23:21] != 3'b111) | (status_turbo & !turbo_dtack_en);
+// VPA: FC=7 cycles get autovector EXCEPT FPU coprocessor accesses (which use DTACK/DSACK)
+assign      _cpuVPA = (cpuFC == 3'b111 && !selectFPU) ? 1'b0 : ~(!_cpuAS && cpuAddr[23:21] == 3'b111);
+// DTACK: FPU uses DSACK protocol (assert DTACK when either DSACK line goes low)
+assign      _cpuDTACK = selectFPU ? (fpu_dsack0_n & fpu_dsack1_n) :
+                        (~(!_cpuAS && cpuAddr[23:21] != 3'b111) | (status_turbo & !turbo_dtack_en));
 
 wire        cpu_en_p      = status_turbo ? clk16_en_p : clk8_en_p;
 wire        cpu_en_n      = status_turbo ? clk16_en_n : clk8_en_n;
@@ -521,9 +543,27 @@ tg68k tg68k (
 
 	.ipl        ( _cpuIPL ),
 	.berr       ( 1'b0 ),
-	.din        ( dataControllerDataOut ),
+	.din        ( selectFPU ? fpu_data_out[15:0] : dataControllerDataOut ),
 	.dout       ( tg68_dout ),
 	.addr       ( tg68_a )
+);
+
+// MC68881 FPU - CIR dialog mode (coprocessor protocol via TG68K)
+mc68881_fpu_lite fpu_inst (
+	.clk        ( clk_sys              ),
+	.reset_n    ( _cpuReset            ),
+	.a_in       ( fpu_addr_remapped    ),
+	.d_in       ( {16'h0000, cpuDataOut} ),
+	.d_out      ( fpu_data_out         ),
+	.size_n     ( 2'b01                ),  // word-sized transfers
+	.as_n       ( _cpuAS               ),
+	.cs_n       ( ~fpuAddrMatch        ),
+	.rw         ( _cpuRW               ),
+	.ds_n       ( _cpuUDS & _cpuLDS    ),  // active when either byte lane selected
+	.dsack0_n   ( fpu_dsack0_n         ),
+	.dsack1_n   ( fpu_dsack1_n         ),
+	.sense_n    ( fpu_sense_n          ),
+	.status_valid (                    )
 );
 
 addrController_top ac0
